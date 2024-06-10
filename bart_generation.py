@@ -1,6 +1,5 @@
 import argparse
 import random
-
 import numpy as np
 import pandas as pd
 import torch
@@ -9,11 +8,13 @@ from torch.utils.data import DataLoader, TensorDataset
 from tqdm import tqdm
 from transformers import AutoTokenizer, BartForConditionalGeneration
 
-from optimizer import AdamW
+from datasets import load_multitask_data
 
+from optimizer import AdamW
 
 TQDM_DISABLE = False
 
+batch_size = 32
 
 def transform_data(dataset, max_length=256):
     """
@@ -23,15 +24,58 @@ def transform_data(dataset, max_length=256):
     sentence_1 + SEP + sentence_1 segment location + SEP + paraphrase types.
     Return Data Loader.
     """
-    ### TODO
-    raise NotImplementedError
+    tokenizer = AutoTokenizer.from_pretrained("facebook/bart-large")
+
+    input_ids = []
+    attention_masks = []
+    labels = []
+
+    for _, row in tqdm(dataset.iterrows(), total=len(dataset), disable=TQDM_DISABLE):
+        sentence_1 = row['sentence1']
+        segment_location_1 = row['sentence1_segment_location']
+        paraphrase_type = row['paraphrase_types']
+        combined_input = f"{sentence_1} [SEP] {segment_location_1} [SEP] {paraphrase_type}"
+
+        encoding = tokenizer(
+            combined_input,
+            max_length=max_length,
+            padding='max_length',
+            truncation=True,
+            return_tensors='pt'
+        )
+
+        if 'sentence2' in row:
+            sentence_2 = row['sentence2']
+            label_encoding = tokenizer(
+                sentence_2,
+                max_length=max_length,
+                padding='max_length',
+                truncation=True,
+                return_tensors='pt'
+            )
+            labels.append(label_encoding['input_ids'].squeeze())
+        else:
+            labels.append(torch.zeros(max_length, dtype=torch.long))
+
+        input_ids.append(encoding['input_ids'].squeeze())
+        attention_masks.append(encoding['attention_mask'].squeeze())
+
+    input_ids = torch.stack(input_ids)
+    attention_masks = torch.stack(attention_masks)
+    labels = torch.stack(labels)
+
+    dataset = TensorDataset(input_ids, attention_masks, labels)
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+
+    return dataloader
 
 
-def train_model(model, train_data, dev_data, device, tokenizer):
+def train_model(model, train_data, device, tokenizer): #todo: put dev_data back in
     """
     Train the model. Return and save the model.
     """
     ### TODO
+
     raise NotImplementedError
 
 
@@ -115,23 +159,24 @@ def finetune_paraphrase_generation(args):
     tokenizer = AutoTokenizer.from_pretrained("facebook/bart-large")
 
     train_dataset = pd.read_csv("data/etpc-paraphrase-train.csv", sep="\t")
-    dev_dataset = pd.read_csv("data/etpc-paraphrase-dev.csv", sep="\t")
+    #dev_dataset = pd.read_csv("data/etpc-paraphrase-dev.csv", sep="\t")
+    #TODO: This is not in data
     test_dataset = pd.read_csv("data/etpc-paraphrase-generation-test-student.csv", sep="\t")
 
     # You might do a split of the train data into train/validation set here
-    # ...
+    #todo: split
 
     train_data = transform_data(train_dataset)
-    dev_data = transform_data(dev_dataset)
+    #dev_data = transform_data(dev_dataset) #Todo: Back
     test_data = transform_data(test_dataset)
 
     print(f"Loaded {len(train_dataset)} training samples.")
 
-    model = train_model(model, train_data, dev_data, device, tokenizer)
+    #model = train_model(model, train_data, device, tokenizer) #Todo: put training back
 
     print("Training finished.")
 
-    bleu_score = evaluate_model(model, dev_data, device, tokenizer)
+    bleu_score = evaluate_model(model, train_data, device, tokenizer)
     print(f"The BLEU-score of the model is: {bleu_score:.3f}")
 
     test_ids = test_dataset["id"]
@@ -139,7 +184,6 @@ def finetune_paraphrase_generation(args):
     test_results.to_csv(
         "predictions/bart/etpc-paraphrase-generation-test-output.csv", index=False, sep="\t"
     )
-
 
 if __name__ == "__main__":
     args = get_args()
