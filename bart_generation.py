@@ -8,10 +8,6 @@ from torch.utils.data import DataLoader, TensorDataset
 from tqdm import tqdm
 from transformers import AutoTokenizer, BartForConditionalGeneration
 
-from datasets import load_multitask_data
-
-from optimizer import AdamW
-
 TQDM_DISABLE = False
 
 batch_size = 32
@@ -80,15 +76,41 @@ def train_model(model, train_data, device, tokenizer): #todo: put dev_data back 
 
 
 def test_model(test_data, test_ids, device, model, tokenizer):
-    """
-    Test the model. Generate paraphrases for the given sentences (sentence1) and return the results
-    in form of a Pandas dataframe with the columns 'id' and 'Generated_sentence2'.
-    The data format in the columns should be the same as in the train dataset.
-    Return this dataframe.
-    """
-    ### TODO
-    raise NotImplementedError
+    model.eval()
+    generated_sentences = []
 
+    with torch.no_grad():
+        for batch in test_data:
+            input_ids, attention_mask, _ = batch
+            input_ids = input_ids.to(device)
+            attention_mask = attention_mask.to(device)
+
+            # Generate paraphrases
+            outputs = model.generate(
+                input_ids,
+                attention_mask=attention_mask,
+                max_length=50,
+                num_beams=5,
+                early_stopping=True,
+            )
+
+            pred_text = [
+                tokenizer.decode(g, skip_special_tokens=True, clean_up_tokenization_spaces=True)
+                for g in outputs
+            ]
+
+            generated_sentences.extend(pred_text)
+            break #Todo: Remove this after development phase
+
+    for i in range(len(test_ids)-len(generated_sentences)): #Todo: This is also for development
+        generated_sentences.extend("0")
+
+    results = pd.DataFrame({
+        'id': test_ids,
+        'Generated_sentence2': generated_sentences
+    })
+
+    return results
 
 def evaluate_model(model, test_data, device, tokenizer):
     """
@@ -126,6 +148,7 @@ def evaluate_model(model, test_data, device, tokenizer):
 
             predictions.extend(pred_text)
             references.extend([[r] for r in ref_text])
+            break #Todo: Remove this after development phase
 
     model.train()
 
@@ -165,6 +188,7 @@ def finetune_paraphrase_generation(args):
 
     # You might do a split of the train data into train/validation set here
     #todo: split
+
 
     train_data = transform_data(train_dataset)
     #dev_data = transform_data(dev_dataset) #Todo: Back
