@@ -1,6 +1,7 @@
 import argparse
 import random
 import numpy as np
+print(np.version)
 import pandas as pd
 import torch
 from sacrebleu.metrics import BLEU
@@ -69,10 +70,22 @@ def transform_data(dataset, max_length=256):
 def train_model(model, train_data, device, tokenizer): #todo: put dev_data back in
     """
     Train the model. Return and save the model.
+    https://huggingface.co/docs/transformers/en/training#train-in-native-pytorch
     """
-    ### TODO
+    num_epochs = 1
+    num_training_steps = num_epochs * len(train_data)
+    progress_bar = tqdm(range(num_training_steps))
 
-    raise NotImplementedError
+    model.train()
+    for epoch in range(num_epochs):
+        for batch in train_data:
+            input_ids, attention_mask, labels = [tensor.to(device) for tensor in batch]
+            outputs = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
+            loss = outputs.loss
+            loss.backward()
+            progress_bar.update(1)
+
+    return model
 
 
 def test_model(test_data, test_ids, device, model, tokenizer):
@@ -187,8 +200,7 @@ def finetune_paraphrase_generation(args):
     test_dataset = pd.read_csv("data/etpc-paraphrase-generation-test-student.csv", sep="\t")
 
     # You might do a split of the train data into train/validation set here
-    #todo: split
-
+    # todo: split
 
     train_data = transform_data(train_dataset)
     #dev_data = transform_data(dev_dataset) #Todo: Back
@@ -196,7 +208,9 @@ def finetune_paraphrase_generation(args):
 
     print(f"Loaded {len(train_dataset)} training samples.")
 
-    #model = train_model(model, train_data, device, tokenizer) #Todo: put training back
+    print(type(train_data))
+
+    model = train_model(model, train_data, device, tokenizer) #Todo: put training back
 
     print("Training finished.")
 
