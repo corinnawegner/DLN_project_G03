@@ -9,6 +9,9 @@ from tqdm import tqdm
 from transformers import AutoTokenizer, BartForConditionalGeneration
 
 from optimizer import AdamW
+import warnings
+
+warnings.filterwarnings("ignore", category=FutureWarning)
 
 TQDM_DISABLE = False
 
@@ -73,7 +76,7 @@ def train_model(model, train_data, dev_data, device, tokenizer): #todo: put dev_
     Train the model. Return and save the model.
     https://huggingface.co/docs/transformers/en/training#train-in-native-pytorch
     """
-    num_epochs = 1 #Todo: Train for more epochs
+    num_epochs = 5 #Todo: Train for more epochs
     num_training_steps = num_epochs * len(train_data)
     progress_bar = tqdm(range(num_training_steps))
 
@@ -89,7 +92,6 @@ def train_model(model, train_data, dev_data, device, tokenizer): #todo: put dev_
             optimizer.step()
             optimizer.zero_grad()
             progress_bar.update(1)
-            AdamW
 
     return model
 
@@ -208,7 +210,7 @@ def finetune_paraphrase_generation(args):
     # You might do a split of the train data into train/validation set here
     # todo: split
 
-    train_data = transform_data(train_dataset)
+    train_data = transform_data(train_dataset[:10]) #Todo: Use complete dataset
     #dev_data = transform_data(dev_dataset) #Todo: Back
     test_data = transform_data(test_dataset)
 
