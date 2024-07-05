@@ -1,13 +1,14 @@
 import argparse
 import random
 import numpy as np
-print(np.version)
 import pandas as pd
 import torch
 from sacrebleu.metrics import BLEU
 from torch.utils.data import DataLoader, TensorDataset
 from tqdm import tqdm
 from transformers import AutoTokenizer, BartForConditionalGeneration
+
+from optimizer import AdamW
 
 TQDM_DISABLE = False
 
@@ -67,14 +68,16 @@ def transform_data(dataset, max_length=256):
     return dataloader
 
 
-def train_model(model, train_data, device, tokenizer): #todo: put dev_data back in
+def train_model(model, train_data, dev_data, device, tokenizer): #todo: put dev_data back in
     """
     Train the model. Return and save the model.
     https://huggingface.co/docs/transformers/en/training#train-in-native-pytorch
     """
-    num_epochs = 1
+    num_epochs = 1 #Todo: Train for more epochs
     num_training_steps = num_epochs * len(train_data)
     progress_bar = tqdm(range(num_training_steps))
+
+    optimizer = AdamW(model.parameters(), lr=5e-5)
 
     model.train()
     for epoch in range(num_epochs):
@@ -83,7 +86,10 @@ def train_model(model, train_data, device, tokenizer): #todo: put dev_data back 
             outputs = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
             loss = outputs.loss
             loss.backward()
+            optimizer.step()
+            optimizer.zero_grad()
             progress_bar.update(1)
+            AdamW
 
     return model
 
@@ -208,9 +214,7 @@ def finetune_paraphrase_generation(args):
 
     print(f"Loaded {len(train_dataset)} training samples.")
 
-    print(type(train_data))
-
-    model = train_model(model, train_data, device, tokenizer) #Todo: put training back
+    model = train_model(model, train_data, None, device, tokenizer) #Todo: Add dev data if it exists
 
     print("Training finished.")
 
