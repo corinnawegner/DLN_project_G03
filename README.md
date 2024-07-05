@@ -2,12 +2,6 @@
 
 This is the starting code for the default final project for the Deep Learning for Natural Language Processing course at the University of Göttingen. You can find the handout [here](https://docs.google.com/document/d/1pZiPDbcUVhU9ODeMUI_lXZKQWSsxr7GO/edit?usp=sharing&ouid=112211987267179322743&rtpof=true&sd=true)
 
-In this project, you will implement some important components of the BERT model to better understanding its architecture.
-You will then use the embeddings produced by your BERT model on three downstream tasks: sentiment classification, paraphrase detection and semantic similarity.
-
-After finishing the BERT implementation, you will have a simple model that simultaneously performs the three tasks.
-You will then implement extensions to improve on top of this baseline.
-
 ## Setup instructions
 
 * Follow `setup.sh` to properly setup a conda environment and install dependencies.
@@ -44,13 +38,11 @@ _Example:_
     
 -   **Group code:**
     
--   **Group repository:**
+-   **Group repository:** https://github.com/corinnawegner/DLN_project_G03/
     
--   **Tutor responsible:**
+-   **Tutor responsible:** [Niklas Bauer](https://github.com/ItsNiklas/)
     
--   **Group team leader:**
-    
--   **Group members:**
+-   **Group members:** Corinna Wegner, Minyan Fu, Yiyang Huang, Amin Nematbakhsh, Sebastian Ebert, 	 
 
   
 # Setup instructions 
