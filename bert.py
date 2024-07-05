@@ -51,7 +51,7 @@ class BertSelfAttention(nn.Module):
         hidden_size = num_attention_heads * attention_head_size
         # compute the attention scores
 
-        S = torch.matmul(query,key.transpose(-2,-1)) / math.sqrt(self.attention_head_size)
+        S = torch.matmul(query,key.transpose(-1,-2)) / math.sqrt(self.attention_head_size)
         # add attention mask to mask out padding tokens
         S = S + attention_mask
         # normalize the attention scores
@@ -61,7 +61,11 @@ class BertSelfAttention(nn.Module):
         # calculate the attention value
         V = torch.matmul(S,value)
         # recover the original shape
-        V = V.transpose(-2,-1).contiguous().view(bs,seq_len,hidden_size)
+        #V = V.transpose(-2,-1).contiguous().view(bs,seq_len,hidden_size)
+
+        V = V.transpose(1, 2).contiguous()
+        new_context_layer_shape = V.size()[:-2] + (self.all_head_size,)
+        V = V.view(*new_context_layer_shape)
 
         return V
         # raise NotImplementedError
@@ -198,7 +202,7 @@ class BertModel(BertPreTrainedModel):
         seq_length = input_shape[1]
 
         # Get word embedding from self.word_embedding into input_embeds.
-        inputs_embeds = None
+        #inputs_embeds = None
         ### TODO
         inputs_embeds = self.word_embedding(input_ids)
         # raise NotImplementedError
