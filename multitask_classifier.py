@@ -69,6 +69,12 @@ class MultitaskBERT(nn.Module):
         self.fc1 = torch.nn.Linear(BERT_HIDDEN_SIZE,256)
         self.fc2 = torch.nn.Linear(256,128)
         self.output = torch.nn.Linear(128,1)
+
+        self.dropout_pp = torch.nn.Dropout(p=0.5)
+        self.pp1 = torch.nn.Linear(BERT_HIDDEN_SIZE*2,BERT_HIDDEN_SIZE)
+        self.pp2 = torch.nn.Linear(BERT_HIDDEN_SIZE,256)
+        self.pp3 = torch.nn.Linear(256,128)
+        self.output_pp = torch.nn.Linear(128,1)
         raise NotImplementedError
 
     def forward(self, input_ids, attention_mask):
@@ -103,6 +109,25 @@ class MultitaskBERT(nn.Module):
         Dataset: Quora
         """
         ### TODO
+        outputs_1 = self.forward(input_ids_1, attention_mask_1)
+        outputs_2 = self.forward(input_ids_2, attention_mask_2)
+
+        # combine the 2 sentences 
+        combined_output = torch.cat((outputs_1, outputs_2), dim=1)
+        # forward and relu layers
+        output = F.relu(self.pp1(combined_output))
+        output = F.relu(self.pp2(output))
+        output = F.relu(self.pp3(output))
+
+        output = self.output_pp(output)
+        
+        
+        # pass on sigmoid into probabilities and make it into 0 or 1
+        probabilities = torch.sigmoid(output, dim=1)
+        predictions = (probabilities > 0.5).int()
+        
+        return predictions
+
         raise NotImplementedError
 
     def predict_similarity(self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2):
@@ -263,6 +288,30 @@ def train_multitask(args):
             batch_size=args.batch_size,
             collate_fn=sts_dev_data.collate_fn,
         )
+    
+    if args.task == "qqp" or args.task == "multitask":
+        qqp_train_data = SentencePairDataset(
+            qqp_train_data, 
+            args
+        )   
+        qqp_dev_data = SentencePairDataset(
+            qqp_dev_data, 
+            args
+        )
+
+        quora_train_dataloader = DataLoader(
+            qqp_train_data, 
+            shuffle=True,
+            batch_size=args.batch_size,
+            collate_fn=sts_train_data.collate_fn,
+        )
+        quora_dev_dataloader = DataLoader(
+            qqp_dev_data,
+            shuffle=True,
+            batch_size=args.batch_size,
+            collate_fn=sts_dev_data.collate_fn,
+        )
+    
     #   Load data for the other datasets
     # If you are doing the paraphrase type detection with the minBERT model as well, make sure
     # to transform the the data labels into binaries (as required in the bart_detection.py script)
@@ -358,7 +407,32 @@ def train_multitask(args):
         if args.task == "qqp" or args.task == "multitask":
             # Trains the model on the qqp dataset
             ### TODO
-            raise NotImplementedError
+            for batch in tqdm(
+                quora_train_dataloader, desc=f"train-{epoch+1:02}", disable=TQDM_DISABLE
+            ):  
+                b_ids_1, b_ids_2, b_mask_1, b_mask_2, b_labels = (
+                    batch["token_ids_1"],
+                    batch["token_ids_2"],
+                    batch["attention_mask_1"],
+                    batch["attention_mask_2"],
+                    batch["labels"],
+                )
+
+                b_ids_1 = b_ids_1.to(device)
+                b_ids_2 = b_ids_2.to(device)
+                b_mask_1 = b_mask_1.to(device)
+                b_mask_2 = b_mask_2.to(device)
+                b_labels = b_labels.to(device)
+
+                optimizer.zero_grad()
+                logits = model.predict_paraphrase(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
+                loss = F.binary_cross_entropy_with_logits(logits.view(-1), b_labels.view(-1).to(torch.float32))
+                loss.backward()
+                optimizer.step()
+
+                train_loss += loss.item()
+                num_batches += 1
+            # raise NotImplementedError
 
         if args.task == "etpc" or args.task == "multitask":
             # Trains the model on the etpc dataset
