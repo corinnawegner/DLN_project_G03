@@ -15,11 +15,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from bert import BertModel
-from datasets import (
-    SentenceClassificationDataset,
-    SentencePairDataset,
-    load_multitask_data,
-)
+from datasets_sst import SentenceClassificationDataset, load_sst_data
 from evaluation import model_eval_multitask, test_model_multitask
 from optimizer import AdamW
 
@@ -65,10 +61,17 @@ class MultitaskBERT(nn.Module):
             elif config.option == "finetune":
                 param.requires_grad = True
         ### TODO
+        self.sentiment_classifier = nn.Linear(config.hidden_size, N_SENTIMENT_CLASSES)
+        
         raise NotImplementedError
 
     def forward(self, input_ids, attention_mask):
         """Takes a batch of sentences and produces embeddings for them."""
+        outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask)
+        pooled_output = outputs["pooler_output"]
+        sentiment_logits = self.sentiment_classifier(pooled_output)
+        # Add forward logic for other tasks here
+        return sentiment_logits
 
         # The final BERT embedding is the hidden state of [CLS] token (the first token).
         # See BertModel.forward() for more details.
@@ -79,12 +82,10 @@ class MultitaskBERT(nn.Module):
         raise NotImplementedError
 
     def predict_sentiment(self, input_ids, attention_mask):
-        """
-        Given a batch of sentences, outputs logits for classifying sentiment.
-        There are 5 sentiment classes:
-        (0 - negative, 1- somewhat negative, 2- neutral, 3- somewhat positive, 4- positive)
-        Thus, your output should contain 5 logits for each sentence.
-        Dataset: SST
+        outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask)
+        pooled_output = outputs["pooler_output"]
+        sentiment_logits = self.sentiment_classifier(pooled_output)
+        return sentiment_logits
         """
         ### TODO
         raise NotImplementedError
