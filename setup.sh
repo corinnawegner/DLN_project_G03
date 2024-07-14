@@ -1,4 +1,4 @@
-#!/bin/bash -i
+#!/bin/bash
 set -e
 
 # Set up Conda, install Python

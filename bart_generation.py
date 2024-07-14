@@ -13,7 +13,7 @@ import warnings
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 
-TQDM_DISABLE = False
+TQDM_DISABLE = True
 
 batch_size = 32
 
@@ -76,11 +76,11 @@ def train_model(model, train_data, dev_data, device, tokenizer): #todo: put dev_
     Train the model. Return and save the model.
     https://huggingface.co/docs/transformers/en/training#train-in-native-pytorch
     """
-    num_epochs = 1 #Todo: Train for more epochs
+    num_epochs = 50 #Todo: Train for more epochs
     num_training_steps = num_epochs * len(train_data)
     progress_bar = tqdm(range(num_training_steps))
 
-    optimizer = AdamW(model.parameters(), lr=5e-7)
+    optimizer = AdamW(model.parameters(), lr=5e-5)
 
     model.train()
     for epoch in range(num_epochs):
@@ -203,14 +203,21 @@ def finetune_paraphrase_generation(args):
     tokenizer = AutoTokenizer.from_pretrained("facebook/bart-large", local_files_only=True)
 
     train_dataset = pd.read_csv("data/etpc-paraphrase-train.csv", sep="\t")
+    train_dataset_shuffled = train_dataset.sample(frac=1, random_state=42).reset_index(drop=True)
+
     #dev_dataset = pd.read_csv("data/etpc-paraphrase-dev.csv", sep="\t")
     #TODO: This is not in data
     test_dataset = pd.read_csv("data/etpc-paraphrase-generation-test-student.csv", sep="\t")
 
     # You might do a split of the train data into train/validation set here
     # todo: split
+    val_ratio = 0.2
+    split_index = int(len(train_dataset_shuffled) * val_ratio)
 
-    train_data = transform_data(train_dataset[:10]) #Todo: Use complete dataset
+    train_dataset = train_dataset_shuffled.iloc[split_index:]
+    val_dataset = train_dataset_shuffled.iloc[:split_index]
+
+    train_data = transform_data(train_dataset) #Todo: Use complete dataset
     #dev_data = transform_data(dev_dataset) #Todo: Back
     test_data = transform_data(test_dataset)
 

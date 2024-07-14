@@ -63,4 +63,4 @@ from transformers import AutoTokenizer, AutoModel, BartModel
 
 tokenizer = AutoTokenizer.from_pretrained('facebook/bart-large')
 model = BartModel.from_pretrained('facebook/bart-large')
-EOF
+EOF-
