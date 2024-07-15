@@ -65,7 +65,21 @@ class MultitaskBERT(nn.Module):
             elif config.option == "finetune":
                 param.requires_grad = True
         ### TODO
-        raise NotImplementedError
+        self.sentiment_classifier = nn.Linear(config.hidden_size, N_SENTIMENT_CLASSES)
+
+        # self.dropout = torch.nn.Dropout(p=0.5)
+        # self.fc1 = torch.nn.Linear(BERT_HIDDEN_SIZE,256)
+        # self.fc2 = torch.nn.Linear(256,128)
+        # self.output = torch.nn.Linear(128,1)
+        self.output = torch.nn.Linear(BERT_HIDDEN_SIZE,1)
+
+        # self.dropout_pp = torch.nn.Dropout(p=0.5)
+        # self.pp1 = torch.nn.Linear(BERT_HIDDEN_SIZE*2,BERT_HIDDEN_SIZE)
+        # self.pp2 = torch.nn.Linear(BERT_HIDDEN_SIZE,256)
+        # self.pp3 = torch.nn.Linear(256,128)
+        # self.output_pp = torch.nn.Linear(128,1)
+        self.output_pp =torch.nn.Linear(BERT_HIDDEN_SIZE*2,1)
+        # raise NotImplementedError
 
     def forward(self, input_ids, attention_mask):
         """Takes a batch of sentences and produces embeddings for them."""
@@ -76,7 +90,9 @@ class MultitaskBERT(nn.Module):
         # When thinking of improvements, you can later try modifying this
         # (e.g., by adding other layers).
         ### TODO
-        raise NotImplementedError
+        output = self.bert(input_ids, attention_mask=attention_mask)
+        return output['last_hidden_state'][:,0,:]
+        # raise NotImplementedError
 
     def predict_sentiment(self, input_ids, attention_mask):
         """
@@ -87,7 +103,10 @@ class MultitaskBERT(nn.Module):
         Dataset: SST
         """
         ### TODO
-        raise NotImplementedError
+        output =self.forward(input_ids,attention_mask)
+        sentiment_logits = self.sentiment_classifier(output)
+        return sentiment_logits
+        # raise NotImplementedError
 
     def predict_paraphrase(self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2):
         """
@@ -97,6 +116,25 @@ class MultitaskBERT(nn.Module):
         Dataset: Quora
         """
         ### TODO
+        outputs_1 = self.forward(input_ids_1, attention_mask_1)
+        outputs_2 = self.forward(input_ids_2, attention_mask_2)
+
+        # combine the 2 sentences 
+        combined_output = torch.cat((outputs_1, outputs_2), dim=1)
+        # forward and relu layers
+        # output = F.relu(self.pp1(combined_output))
+        # output = F.relu(self.pp2(output))
+        # output = F.relu(self.pp3(output))
+
+        output = self.output_pp(output)
+        
+        
+        # pass on sigmoid into probabilities and make it into 0 or 1
+        probabilities = torch.sigmoid(output, dim=1)
+        predictions = (probabilities > 0.5).int()
+        
+        return predictions
+
         raise NotImplementedError
 
     def predict_similarity(self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2):
@@ -107,7 +145,64 @@ class MultitaskBERT(nn.Module):
         Dataset: STS
         """
         ### TODO
-        raise NotImplementedError
+
+        # set up the layers
+        output1 = self.forward(input_ids_1, attention_mask_1)
+        output2 = self.forward(input_ids_2, attention_mask_2)
+        # output1 = self.dropout(output1)
+        # output2 = self.dropout(output2)
+        # output1 = self.fc1(output1)
+        # output2 = self.fc1(output2)
+        # output1 = self.fc2(output1)
+        # output2 = self.fc2(output2)
+        output1 = self.output(output1)
+        output2 = self.output(output2)
+
+        #compute the cosinesimilarity
+        similarity = torch.nn.CosineSimilarity(dim=1)
+        logits = similarity(output1,output2)
+
+        # compute the mean and std
+        mean_cosine = logits.mean()
+        std_cosine = logits.std()
+
+        # normalize cosinesimilarity
+        z_score = (logits - mean_cosine) / std_cosine
+
+        # convert the z_score into [0,1]
+        min_z_score, max_z_score = z_score.min(), z_score.max()
+        normalized_z_score = (z_score - min_z_score) / (max_z_score - min_z_score)
+
+        # convert from [0,1] to [0,5]
+        scaled_z_score = normalized_z_score * 5
+        
+        return scaled_z_score
+    
+# another edition to predict similarity by simple linear transformation on logits
+#  def predict_similarity(self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2):
+    #     """
+    #     Given a batch of pairs of sentences, outputs a single logit corresponding to how similar they are.
+    #     Since the similarity label is a number in the interval [0,5], your output should be normalized to the interval [0,5];
+    #     it will be handled as a logit by the appropriate loss function.
+    #     Dataset: STS
+    #     """
+    #     ### TODO
+    #     output = torch.nn.CosineSimilarity(dim=1)
+
+    #     embeddings_1 = self.forward(input_ids_1, attention_mask_1)
+    #     embeddings_2 = self.forward(input_ids_2, attention_mask_2)
+    #     output1 = self.dropout(embeddings_1)
+    #     output2 = self.dropout(embeddings_2)
+    #     output1 = self.fc1(output1)
+    #     output2 = self.fc1(output2)
+    #     output1 = self.fc2(output1)
+    #     output2 = self.fc2(output2)
+
+    #     logits = output(output1,output2)
+        
+    #     return (logits+1)* 2.5
+
+
 
     def predict_paraphrase_types(
         self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2
@@ -178,6 +273,66 @@ def train_multitask(args):
         )
 
     ### TODO
+    if args.task == "sts" or args.task == "multitask":
+        sts_train_data = SentencePairDataset(
+            sts_train_data, 
+            args,
+            isRegression=True
+        )   
+        sts_dev_data = SentencePairDataset(
+            sts_dev_data, 
+            args,
+            isRegression=True
+        )
+
+        sts_train_dataloader = DataLoader(
+            sts_train_data,
+            shuffle=True,
+            batch_size=args.batch_size,
+            collate_fn=sts_train_data.collate_fn,
+        )
+        sts_dev_dataloader = DataLoader(
+            sts_dev_data,
+            shuffle=True,
+            batch_size=args.batch_size,
+            collate_fn=sts_dev_data.collate_fn,
+        )
+    
+    if args.task == "qqp" or args.task == "multitask":
+        qqp_train_data = SentencePairDataset(
+            quora_train_data, 
+            args
+        )   
+        qqp_dev_data = SentencePairDataset(
+            quora_dev_data, 
+            args
+        )
+
+        quora_train_dataloader = DataLoader(
+            qqp_train_data, 
+            shuffle=True,
+            batch_size=args.batch_size,
+            collate_fn=sts_train_data.collate_fn,
+        )
+        quora_dev_dataloader = DataLoader(
+            qqp_dev_data,
+            shuffle=True,
+            batch_size=args.batch_size,
+            collate_fn=sts_dev_data.collate_fn,
+        )
+    if args.task == "etpc" or args.task == "multitask":
+        etpc_train_data = SentencePairDataset(
+            etpc_train_data, 
+            args
+        )   
+
+        etpc_train_dataloader = DataLoader(
+            etpc_train_data, 
+            shuffle=True,
+            batch_size=args.batch_size,
+            collate_fn=sts_train_data.collate_fn,
+        )
+    
     #   Load data for the other datasets
     # If you are doing the paraphrase type detection with the minBERT model as well, make sure
     # to transform the the data labels into binaries (as required in the bart_detection.py script)
@@ -241,12 +396,64 @@ def train_multitask(args):
         if args.task == "sts" or args.task == "multitask":
             # Trains the model on the sts dataset
             ### TODO
-            raise NotImplementedError
+            for batch in tqdm(
+                sts_train_dataloader, desc=f"train-{epoch+1:02}", disable=TQDM_DISABLE
+            ):  
+                b_ids_1, b_ids_2, b_mask_1, b_mask_2, b_labels = (
+                    batch["token_ids_1"],
+                    batch["token_ids_2"],
+                    batch["attention_mask_1"],
+                    batch["attention_mask_2"],
+                    batch["labels"],
+                )
+
+                b_ids_1 = b_ids_1.to(device)
+                b_ids_2 = b_ids_2.to(device)
+                b_mask_1 = b_mask_1.to(device)
+                b_mask_2 = b_mask_2.to(device)
+                b_labels = b_labels.to(device)
+
+                optimizer.zero_grad()
+                logits = model.predict_similarity(b_ids_1,  b_mask_1, b_ids_2, b_mask_2)
+                #loss = F.mse_loss(logits.to(torch.float32), b_labels.view(-1).to(torch.float32))
+                # l1_loss is better here as we may have extreme value in dataset
+                loss = F.l1_loss(logits.to(torch.float32), b_labels.view(-1).to(torch.float32))
+                loss.backward()
+                optimizer.step()
+
+                train_loss += loss.item()
+                num_batches += 1
+            # raise NotImplementedError
 
         if args.task == "qqp" or args.task == "multitask":
             # Trains the model on the qqp dataset
             ### TODO
-            raise NotImplementedError
+            for batch in tqdm(
+                quora_train_dataloader, desc=f"train-{epoch+1:02}", disable=TQDM_DISABLE
+            ):  
+                b_ids_1, b_ids_2, b_mask_1, b_mask_2, b_labels = (
+                    batch["token_ids_1"],
+                    batch["token_ids_2"],
+                    batch["attention_mask_1"],
+                    batch["attention_mask_2"],
+                    batch["labels"],
+                )
+
+                b_ids_1 = b_ids_1.to(device)
+                b_ids_2 = b_ids_2.to(device)
+                b_mask_1 = b_mask_1.to(device)
+                b_mask_2 = b_mask_2.to(device)
+                b_labels = b_labels.to(device)
+
+                optimizer.zero_grad()
+                logits = model.predict_paraphrase(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
+                loss = F.binary_cross_entropy_with_logits(logits.view(-1), b_labels.view(-1).to(torch.float32))
+                loss.backward()
+                optimizer.step()
+
+                train_loss += loss.item()
+                num_batches += 1
+            # raise NotImplementedError
 
         if args.task == "etpc" or args.task == "multitask":
             # Trains the model on the etpc dataset
@@ -353,7 +560,7 @@ def get_args():
     # You should split the train data into a train and dev set first and change the
     # default path of the --etpc_dev argument to your dev set.
     parser.add_argument("--etpc_train", type=str, default="data/etpc-paraphrase-train.csv")
-    parser.add_argument("--etpc_dev", type=str, default="data/etpc-paraphrase-dev.csv")
+    parser.add_argument("--etpc_dev", type=str, default="data/etpc-paraphrase-train.csv")
     parser.add_argument(
         "--etpc_test", type=str, default="data/etpc-paraphrase-detection-test-student.csv"
     )
