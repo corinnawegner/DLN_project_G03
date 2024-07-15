@@ -82,6 +82,9 @@ def train_model(model, train_data, dev_data, device, tokenizer): #todo: put dev_
 
     optimizer = AdamW(model.parameters(), lr=5e-5)
 
+    best_bleu_score = 0
+    best_model_state = None
+
     model.train()
     for epoch in range(num_epochs):
         for batch in train_data:
@@ -92,6 +95,18 @@ def train_model(model, train_data, dev_data, device, tokenizer): #todo: put dev_
             optimizer.step()
             optimizer.zero_grad()
             progress_bar.update(1)
+
+        if dev_data is not None:
+            bleu_score = evaluate_model(model, dev_data, device, tokenizer)
+            print(f"Validation BLEU score after epoch {epoch + 1}: {bleu_score:.3f}")
+
+            # Save the best model
+            if bleu_score > best_bleu_score:
+                best_bleu_score = bleu_score
+                best_model_state = model.state_dict()
+
+    if best_model_state:
+        model.load_state_dict(best_model_state)
 
     return model
 
@@ -121,10 +136,9 @@ def test_model(test_data, test_ids, device, model, tokenizer):
             ]
 
             generated_sentences.extend(pred_text)
-            break #Todo: Remove this after development phase
 
-    for i in range(len(test_ids)-len(generated_sentences)): #Todo: This is also for development
-        generated_sentences.extend("0")
+    #for i in range(len(test_ids)-len(generated_sentences)): #Todo: This is also for development
+     #   generated_sentences.extend("0")
 
     results = pd.DataFrame({
         'id': test_ids,
@@ -169,7 +183,7 @@ def evaluate_model(model, test_data, device, tokenizer):
 
             predictions.extend(pred_text)
             references.extend(ref_text)
-            break #Todo: Remove this after development phase
+            #break #Todo: Remove this after development phase
 
     model.train()
 
@@ -203,7 +217,7 @@ def finetune_paraphrase_generation(args):
     tokenizer = AutoTokenizer.from_pretrained("facebook/bart-large", local_files_only=True)
 
     train_dataset = pd.read_csv("data/etpc-paraphrase-train.csv", sep="\t")
-    train_dataset_shuffled = train_dataset.sample(frac=1, random_state=42).reset_index(drop=True)
+    train_dataset_shuffled = train_dataset.sample(frac=1, random_state=42).reset_index(drop=True)#[:10]
 
     #dev_dataset = pd.read_csv("data/etpc-paraphrase-dev.csv", sep="\t")
     #TODO: This is not in data
@@ -217,7 +231,8 @@ def finetune_paraphrase_generation(args):
     train_dataset = train_dataset_shuffled.iloc[split_index:]
     val_dataset = train_dataset_shuffled.iloc[:split_index]
 
-    train_data = transform_data(train_dataset) #Todo: Use complete dataset
+    train_data = transform_data(train_dataset)
+    val_data = transform_data(val_dataset)
     #dev_data = transform_data(dev_dataset) #Todo: Back
     test_data = transform_data(test_dataset)
 
@@ -225,7 +240,7 @@ def finetune_paraphrase_generation(args):
 
     bleu_score_before_training = evaluate_model(model, test_data, device, tokenizer)
 
-    model = train_model(model, train_data, None, device, tokenizer) #Todo: Add dev data if it exists
+    model = train_model(model, train_data, val_data, device, tokenizer) #Todo: Add dev data if it exists
 
     print("Training finished.")
 
