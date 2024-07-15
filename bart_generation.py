@@ -223,13 +223,13 @@ def finetune_paraphrase_generation(args):
 
     print(f"Loaded {len(train_dataset)} training samples.")
 
-    bleu_score_before_training = evaluate_model(model, train_data, device, tokenizer)
+    bleu_score_before_training = evaluate_model(model, test_data, device, tokenizer)
 
     model = train_model(model, train_data, None, device, tokenizer) #Todo: Add dev data if it exists
 
     print("Training finished.")
 
-    bleu_score = evaluate_model(model, train_data, device, tokenizer)
+    bleu_score = evaluate_model(model, test_data, device, tokenizer)
     print(f"The BLEU-score of the model is: {bleu_score:.3f}")
     print(f"Without training: {bleu_score_before_training:.3f}")
 
