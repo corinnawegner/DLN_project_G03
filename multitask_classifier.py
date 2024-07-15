@@ -71,7 +71,7 @@ class MultitaskBERT(nn.Module):
         # self.fc1 = torch.nn.Linear(BERT_HIDDEN_SIZE,256)
         # self.fc2 = torch.nn.Linear(256,128)
         # self.output = torch.nn.Linear(128,1)
-        self.output = torch.nn.Linear(BERT_HIDDEN_SIZE,1)
+        # self.output = torch.nn.Linear(BERT_HIDDEN_SIZE,1)
 
         # self.dropout_pp = torch.nn.Dropout(p=0.5)
         # self.pp1 = torch.nn.Linear(BERT_HIDDEN_SIZE*2,BERT_HIDDEN_SIZE)
@@ -155,28 +155,28 @@ class MultitaskBERT(nn.Module):
         # output2 = self.fc1(output2)
         # output1 = self.fc2(output1)
         # output2 = self.fc2(output2)
-        output1 = self.output(output1)
-        output2 = self.output(output2)
+        # output1 = self.output(output1)
+        # output2 = self.output(output2)
 
         #compute the cosinesimilarity
         similarity = torch.nn.CosineSimilarity(dim=1)
         logits = similarity(output1,output2)
 
-        # compute the mean and std
-        mean_cosine = logits.mean()
-        std_cosine = logits.std()
+        # # compute the mean and std
+        # mean_cosine = logits.mean()
+        # std_cosine = logits.std()
 
-        # normalize cosinesimilarity
-        z_score = (logits - mean_cosine) / std_cosine
+        # # normalize cosinesimilarity
+        # z_score = (logits - mean_cosine) / std_cosine
 
-        # convert the z_score into [0,1]
-        min_z_score, max_z_score = z_score.min(), z_score.max()
-        normalized_z_score = (z_score - min_z_score) / (max_z_score - min_z_score)
+        # # convert the z_score into [0,1]
+        # min_z_score, max_z_score = z_score.min(), z_score.max()
+        # normalized_z_score = (z_score - min_z_score) / (max_z_score - min_z_score)
 
-        # convert from [0,1] to [0,5]
-        scaled_z_score = normalized_z_score * 5
+        # # convert from [0,1] to [0,5]
+        # scaled_z_score = normalized_z_score * 5
         
-        return scaled_z_score
+        return (logits+1)* 2.5
     
 # another edition to predict similarity by simple linear transformation on logits
 #  def predict_similarity(self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2):
