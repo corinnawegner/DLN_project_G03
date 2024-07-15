@@ -65,16 +65,20 @@ class MultitaskBERT(nn.Module):
             elif config.option == "finetune":
                 param.requires_grad = True
         ### TODO
-        self.dropout = torch.nn.Dropout(p=0.5)
-        self.fc1 = torch.nn.Linear(BERT_HIDDEN_SIZE,256)
-        self.fc2 = torch.nn.Linear(256,128)
-        self.output = torch.nn.Linear(128,1)
+        self.sentiment_classifier = nn.Linear(config.hidden_size, N_SENTIMENT_CLASSES)
 
-        self.dropout_pp = torch.nn.Dropout(p=0.5)
-        self.pp1 = torch.nn.Linear(BERT_HIDDEN_SIZE*2,BERT_HIDDEN_SIZE)
-        self.pp2 = torch.nn.Linear(BERT_HIDDEN_SIZE,256)
-        self.pp3 = torch.nn.Linear(256,128)
-        self.output_pp = torch.nn.Linear(128,1)
+        # self.dropout = torch.nn.Dropout(p=0.5)
+        # self.fc1 = torch.nn.Linear(BERT_HIDDEN_SIZE,256)
+        # self.fc2 = torch.nn.Linear(256,128)
+        # self.output = torch.nn.Linear(128,1)
+        self.output = torch.nn.Linear(BERT_HIDDEN_SIZE,1)
+
+        # self.dropout_pp = torch.nn.Dropout(p=0.5)
+        # self.pp1 = torch.nn.Linear(BERT_HIDDEN_SIZE*2,BERT_HIDDEN_SIZE)
+        # self.pp2 = torch.nn.Linear(BERT_HIDDEN_SIZE,256)
+        # self.pp3 = torch.nn.Linear(256,128)
+        # self.output_pp = torch.nn.Linear(128,1)
+        self.output_pp =torch.nn.Linear(BERT_HIDDEN_SIZE*2,1)
         raise NotImplementedError
 
     def forward(self, input_ids, attention_mask):
@@ -99,7 +103,10 @@ class MultitaskBERT(nn.Module):
         Dataset: SST
         """
         ### TODO
-        raise NotImplementedError
+        output =self.forward(input_ids,attention_mask)
+        sentiment_logits = self.sentiment_classifier(output)
+        return sentiment_logits
+        # raise NotImplementedError
 
     def predict_paraphrase(self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2):
         """
@@ -115,9 +122,9 @@ class MultitaskBERT(nn.Module):
         # combine the 2 sentences 
         combined_output = torch.cat((outputs_1, outputs_2), dim=1)
         # forward and relu layers
-        output = F.relu(self.pp1(combined_output))
-        output = F.relu(self.pp2(output))
-        output = F.relu(self.pp3(output))
+        # output = F.relu(self.pp1(combined_output))
+        # output = F.relu(self.pp2(output))
+        # output = F.relu(self.pp3(output))
 
         output = self.output_pp(output)
         
@@ -142,12 +149,14 @@ class MultitaskBERT(nn.Module):
         # set up the layers
         output1 = self.forward(input_ids_1, attention_mask_1)
         output2 = self.forward(input_ids_2, attention_mask_2)
-        output1 = self.dropout(output1)
-        output2 = self.dropout(output2)
-        output1 = self.fc1(output1)
-        output2 = self.fc1(output2)
-        output1 = self.fc2(output1)
-        output2 = self.fc2(output2)
+        # output1 = self.dropout(output1)
+        # output2 = self.dropout(output2)
+        # output1 = self.fc1(output1)
+        # output2 = self.fc1(output2)
+        # output1 = self.fc2(output1)
+        # output2 = self.fc2(output2)
+        output1 = self.output(output1)
+        output2 = self.output(output2)
 
         #compute the cosinesimilarity
         similarity = torch.nn.CosineSimilarity(dim=1)
