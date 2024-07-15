@@ -79,7 +79,7 @@ class MultitaskBERT(nn.Module):
         # self.pp3 = torch.nn.Linear(256,128)
         # self.output_pp = torch.nn.Linear(128,1)
         self.output_pp =torch.nn.Linear(BERT_HIDDEN_SIZE*2,1)
-        raise NotImplementedError
+        # raise NotImplementedError
 
     def forward(self, input_ids, attention_mask):
         """Takes a batch of sentences and produces embeddings for them."""
@@ -91,8 +91,8 @@ class MultitaskBERT(nn.Module):
         # (e.g., by adding other layers).
         ### TODO
         output = self.bert(input_ids, attention_mask=attention_mask)
-        return output.last_hidden_state[:,0,:]
-        raise NotImplementedError
+        return output['last_hidden_state'][:,0,:]
+        # raise NotImplementedError
 
     def predict_sentiment(self, input_ids, attention_mask):
         """
@@ -300,11 +300,11 @@ def train_multitask(args):
     
     if args.task == "qqp" or args.task == "multitask":
         qqp_train_data = SentencePairDataset(
-            qqp_train_data, 
+            quora_train_data, 
             args
         )   
         qqp_dev_data = SentencePairDataset(
-            qqp_dev_data, 
+            quora_dev_data, 
             args
         )
 
@@ -319,6 +319,18 @@ def train_multitask(args):
             shuffle=True,
             batch_size=args.batch_size,
             collate_fn=sts_dev_data.collate_fn,
+        )
+    if args.task == "etpc" or args.task == "multitask":
+        etpc_train_data = SentencePairDataset(
+            etpc_train_data, 
+            args
+        )   
+
+        etpc_train_dataloader = DataLoader(
+            etpc_train_data, 
+            shuffle=True,
+            batch_size=args.batch_size,
+            collate_fn=sts_train_data.collate_fn,
         )
     
     #   Load data for the other datasets
@@ -548,7 +560,7 @@ def get_args():
     # You should split the train data into a train and dev set first and change the
     # default path of the --etpc_dev argument to your dev set.
     parser.add_argument("--etpc_train", type=str, default="data/etpc-paraphrase-train.csv")
-    parser.add_argument("--etpc_dev", type=str, default="data/etpc-paraphrase-dev.csv")
+    parser.add_argument("--etpc_dev", type=str, default="data/etpc-paraphrase-train.csv")
     parser.add_argument(
         "--etpc_test", type=str, default="data/etpc-paraphrase-detection-test-student.csv"
     )
