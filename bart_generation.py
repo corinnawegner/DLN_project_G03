@@ -81,8 +81,8 @@ def train_model(model, train_data, dev_data, device, tokenizer): #todo: put dev_
 
     optimizer = AdamW(model.parameters(), lr=5e-5)
 
-    best_bleu_score = 0
-    best_model_state = None
+    #best_bleu_score = 0
+    #best_model_state = None
 
     model.train()
     for epoch in range(num_epochs):
@@ -95,17 +95,17 @@ def train_model(model, train_data, dev_data, device, tokenizer): #todo: put dev_
             optimizer.zero_grad()
             progress_bar.update(1)
 
-        if dev_data is not None:
-            bleu_score = evaluate_model(model, dev_data, device, tokenizer)
-            print(f"Validation BLEU score after epoch {epoch + 1}: {bleu_score:.3f}")
-
+       # if dev_data is not None:
+        #    bleu_score = evaluate_model(model, dev_data, device, tokenizer)
+       #     print(f"Validation BLEU score after epoch {epoch + 1}: {bleu_score:.3f}")
+#
             # Save the best model
-            if bleu_score > best_bleu_score:
-                best_bleu_score = bleu_score
-                best_model_state = model.state_dict()
+       #     if bleu_score > best_bleu_score:
+         #       best_bleu_score = bleu_score
+         #       best_model_state = model.state_dict()
 
-    if best_model_state:
-        model.load_state_dict(best_model_state)
+    #if best_model_state:
+      #  model.load_state_dict(best_model_state)
 
     return model
 
