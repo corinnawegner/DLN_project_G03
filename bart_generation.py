@@ -75,7 +75,7 @@ def train_model(model, train_data, dev_data, device, tokenizer): #todo: put dev_
     Train the model. Return and save the model.
     https://huggingface.co/docs/transformers/en/training#train-in-native-pytorch
     """
-    num_epochs = 50 #Todo: Train for more epochs
+    num_epochs = 50
     num_training_steps = num_epochs * len(train_data)
     progress_bar = tqdm(range(num_training_steps))
 
@@ -135,9 +135,6 @@ def test_model(test_data, test_ids, device, model, tokenizer):
 
             generated_sentences.extend(pred_text)
 
-    #for i in range(len(test_ids)-len(generated_sentences)): #Todo: This is also for development
-     #   generated_sentences.extend("0")
-
     results = pd.DataFrame({
         'id': test_ids,
         'Generated_sentence2': generated_sentences
@@ -181,7 +178,6 @@ def evaluate_model(model, test_data, device, tokenizer):
 
             predictions.extend(pred_text)
             references.extend(ref_text)
-            #break #Todo: Remove this after development phase
 
     model.train()
 
@@ -220,7 +216,6 @@ def finetune_paraphrase_generation(args):
     test_dataset = pd.read_csv("data/etpc-paraphrase-generation-test-student.csv", sep="\t")#[:10]
 
     # You might do a split of the train data into train/validation set here
-    # todo: split
     val_ratio = 0.2
     split_index = int(len(train_dataset_shuffled) * val_ratio)
 
