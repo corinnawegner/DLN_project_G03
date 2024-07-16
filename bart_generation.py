@@ -101,12 +101,12 @@ def train_model(model, train_data, dev_data, device, tokenizer): #todo: put dev_
             print(f"Validation BLEU score after epoch {epoch + 1}: {bleu_score:.3f}")
 
             # Save the best model
-            if bleu_score > best_bleu_score:
-                best_bleu_score = bleu_score
-                best_model_state = model.state_dict()
+ #           if bleu_score > best_bleu_score:
+  #              best_bleu_score = bleu_score
+   #             best_model_state = model.state_dict()
 
-    if best_model_state:
-        model.load_state_dict(best_model_state)
+    #if best_model_state:
+     #   model.load_state_dict(best_model_state)
 
     return model
 
@@ -221,7 +221,7 @@ def finetune_paraphrase_generation(args):
 
     #dev_dataset = pd.read_csv("data/etpc-paraphrase-dev.csv", sep="\t")
     #TODO: This is not in data
-    test_dataset = pd.read_csv("data/etpc-paraphrase-generation-test-student.csv", sep="\t")
+    test_dataset = pd.read_csv("data/etpc-paraphrase-generation-test-student.csv", sep="\t")[:10]
 
     # You might do a split of the train data into train/validation set here
     # todo: split
@@ -240,7 +240,7 @@ def finetune_paraphrase_generation(args):
 
     bleu_score_before_training = evaluate_model(model, test_data, device, tokenizer)
 
-    model = train_model(model, train_data, val_data, device, tokenizer) #Todo: Add dev data if it exists
+   # model = train_model(model, train_data, val_data, device, tokenizer) #Todo: Add dev data if it exists
 
     print("Training finished.")
 
