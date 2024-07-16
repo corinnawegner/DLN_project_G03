@@ -67,17 +67,6 @@ class MultitaskBERT(nn.Module):
         ### TODO
         self.sentiment_classifier = nn.Linear(config.hidden_size, N_SENTIMENT_CLASSES)
 
-        # self.dropout = torch.nn.Dropout(p=0.5)
-        # self.fc1 = torch.nn.Linear(BERT_HIDDEN_SIZE,256)
-        # self.fc2 = torch.nn.Linear(256,128)
-        # self.output = torch.nn.Linear(128,1)
-        self.output = torch.nn.Linear(BERT_HIDDEN_SIZE,1)
-
-        # self.dropout_pp = torch.nn.Dropout(p=0.5)
-        # self.pp1 = torch.nn.Linear(BERT_HIDDEN_SIZE*2,BERT_HIDDEN_SIZE)
-        # self.pp2 = torch.nn.Linear(BERT_HIDDEN_SIZE,256)
-        # self.pp3 = torch.nn.Linear(256,128)
-        # self.output_pp = torch.nn.Linear(128,1)
         self.output_pp =torch.nn.Linear(BERT_HIDDEN_SIZE*2,1)
         # raise NotImplementedError
 
@@ -121,12 +110,8 @@ class MultitaskBERT(nn.Module):
 
         # combine the 2 sentences 
         combined_output = torch.cat((outputs_1, outputs_2), dim=1)
-        # forward and relu layers
-        # output = F.relu(self.pp1(combined_output))
-        # output = F.relu(self.pp2(output))
-        # output = F.relu(self.pp3(output))
 
-        output = self.output_pp(output)
+        output = self.output_pp(combined_output)
         
         
         # pass on sigmoid into probabilities and make it into 0 or 1
@@ -135,7 +120,7 @@ class MultitaskBERT(nn.Module):
         
         return predictions
 
-        raise NotImplementedError
+        # raise NotImplementedError
 
     def predict_similarity(self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2):
         """
@@ -149,58 +134,28 @@ class MultitaskBERT(nn.Module):
         # set up the layers
         output1 = self.forward(input_ids_1, attention_mask_1)
         output2 = self.forward(input_ids_2, attention_mask_2)
-        # output1 = self.dropout(output1)
-        # output2 = self.dropout(output2)
-        # output1 = self.fc1(output1)
-        # output2 = self.fc1(output2)
-        # output1 = self.fc2(output1)
-        # output2 = self.fc2(output2)
-        output1 = self.output(output1)
-        output2 = self.output(output2)
 
         #compute the cosinesimilarity
         similarity = torch.nn.CosineSimilarity(dim=1)
         logits = similarity(output1,output2)
 
-        # compute the mean and std
-        mean_cosine = logits.mean()
-        std_cosine = logits.std()
+        # # compute the mean and std
+        # mean_cosine = logits.mean()
+        # std_cosine = logits.std()
 
-        # normalize cosinesimilarity
-        z_score = (logits - mean_cosine) / std_cosine
+        # # normalize cosinesimilarity
+        # z_score = (logits - mean_cosine) / std_cosine
 
-        # convert the z_score into [0,1]
-        min_z_score, max_z_score = z_score.min(), z_score.max()
-        normalized_z_score = (z_score - min_z_score) / (max_z_score - min_z_score)
+        # # convert the z_score into [0,1]
+        # min_z_score, max_z_score = z_score.min(), z_score.max()
+        # normalized_z_score = (z_score - min_z_score) / (max_z_score - min_z_score)
 
-        # convert from [0,1] to [0,5]
-        scaled_z_score = normalized_z_score * 5
+        # # convert from [0,1] to [0,5]
+        # scaled_z_score = normalized_z_score * 5
         
-        return scaled_z_score
-    
-# another edition to predict similarity by simple linear transformation on logits
-#  def predict_similarity(self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2):
-    #     """
-    #     Given a batch of pairs of sentences, outputs a single logit corresponding to how similar they are.
-    #     Since the similarity label is a number in the interval [0,5], your output should be normalized to the interval [0,5];
-    #     it will be handled as a logit by the appropriate loss function.
-    #     Dataset: STS
-    #     """
-    #     ### TODO
-    #     output = torch.nn.CosineSimilarity(dim=1)
-
-    #     embeddings_1 = self.forward(input_ids_1, attention_mask_1)
-    #     embeddings_2 = self.forward(input_ids_2, attention_mask_2)
-    #     output1 = self.dropout(embeddings_1)
-    #     output2 = self.dropout(embeddings_2)
-    #     output1 = self.fc1(output1)
-    #     output2 = self.fc1(output2)
-    #     output1 = self.fc2(output1)
-    #     output2 = self.fc2(output2)
-
-    #     logits = output(output1,output2)
+        # return scaled_z_score
         
-    #     return (logits+1)* 2.5
+        return (logits+1)* 2.5
 
 
 
@@ -312,13 +267,13 @@ def train_multitask(args):
             qqp_train_data, 
             shuffle=True,
             batch_size=args.batch_size,
-            collate_fn=sts_train_data.collate_fn,
+            collate_fn=quora_train_data.collate_fn,
         )
         quora_dev_dataloader = DataLoader(
             qqp_dev_data,
             shuffle=True,
             batch_size=args.batch_size,
-            collate_fn=sts_dev_data.collate_fn,
+            collate_fn=quora_dev_data.collate_fn,
         )
     if args.task == "etpc" or args.task == "multitask":
         etpc_train_data = SentencePairDataset(
@@ -330,7 +285,7 @@ def train_multitask(args):
             etpc_train_data, 
             shuffle=True,
             batch_size=args.batch_size,
-            collate_fn=sts_train_data.collate_fn,
+            collate_fn=etpc_train_data.collate_fn,
         )
     
     #   Load data for the other datasets
