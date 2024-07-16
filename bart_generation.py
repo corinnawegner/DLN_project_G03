@@ -70,7 +70,6 @@ def transform_data(dataset, max_length=256):
 
     return dataloader
 
-
 def train_model(model, train_data, dev_data, device, tokenizer): #todo: put dev_data back in
     """
     Train the model. Return and save the model.
@@ -101,15 +100,14 @@ def train_model(model, train_data, dev_data, device, tokenizer): #todo: put dev_
             print(f"Validation BLEU score after epoch {epoch + 1}: {bleu_score:.3f}")
 
             # Save the best model
- #           if bleu_score > best_bleu_score:
-  #              best_bleu_score = bleu_score
-   #             best_model_state = model.state_dict()
+            if bleu_score > best_bleu_score:
+                best_bleu_score = bleu_score
+                best_model_state = model.state_dict()
 
-    #if best_model_state:
-     #   model.load_state_dict(best_model_state)
+    if best_model_state:
+        model.load_state_dict(best_model_state)
 
     return model
-
 
 def test_model(test_data, test_ids, device, model, tokenizer):
     model.eval()
@@ -191,7 +189,6 @@ def evaluate_model(model, test_data, device, tokenizer):
     bleu_score = bleu.corpus_score(predictions, [references])
     return bleu_score.score
 
-
 def seed_everything(seed=11711):
     random.seed(seed)
     np.random.seed(seed)
@@ -200,7 +197,6 @@ def seed_everything(seed=11711):
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.deterministic = True
-
 
 def get_args():
     parser = argparse.ArgumentParser()
@@ -216,12 +212,12 @@ def finetune_paraphrase_generation(args):
     model.to(device)
     tokenizer = AutoTokenizer.from_pretrained("facebook/bart-large", local_files_only=True)
 
-    train_dataset = pd.read_csv("data/etpc-paraphrase-train.csv", sep="\t")
-    train_dataset_shuffled = train_dataset.sample(frac=1, random_state=42).reset_index(drop=True)#[:10]
+    train_dataset = pd.read_csv("data/etpc-paraphrase-train.csv", sep="\t")#[:10]
+    train_dataset_shuffled = train_dataset.sample(frac=1, random_state=42).reset_index(drop=True)
 
     #dev_dataset = pd.read_csv("data/etpc-paraphrase-dev.csv", sep="\t")
     #TODO: This is not in data
-    test_dataset = pd.read_csv("data/etpc-paraphrase-generation-test-student.csv", sep="\t")[:10]
+    test_dataset = pd.read_csv("data/etpc-paraphrase-generation-test-student.csv", sep="\t")#[:10]
 
     # You might do a split of the train data into train/validation set here
     # todo: split
@@ -238,13 +234,13 @@ def finetune_paraphrase_generation(args):
 
     print(f"Loaded {len(train_dataset)} training samples.")
 
-    bleu_score_before_training = evaluate_model(model, test_data, device, tokenizer)
+    bleu_score_before_training = evaluate_model(model, val_data, device, tokenizer)
 
-   # model = train_model(model, train_data, val_data, device, tokenizer) #Todo: Add dev data if it exists
+    model = train_model(model, train_data, val_data, device, tokenizer) #Todo: Add dev data if it exists
 
     print("Training finished.")
 
-    bleu_score = evaluate_model(model, test_data, device, tokenizer)
+    bleu_score = evaluate_model(model, val_data, device, tokenizer)
     print(f"The BLEU-score of the model is: {bleu_score:.3f}")
     print(f"Without training: {bleu_score_before_training:.3f}")
 
