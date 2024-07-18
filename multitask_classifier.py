@@ -136,8 +136,8 @@ class MultitaskBERT(nn.Module):
         output2 = self.forward(input_ids_2, attention_mask_2)
 
         #compute the cosinesimilarity
-        # similarity = torch.nn.CosineSimilarity(dim=1)
-        # logits = similarity(output1,output2)
+        similarity = torch.nn.CosineSimilarity(dim=1)
+        logits = similarity(output1,output2)
 
         # # compute the mean and std
         # mean_cosine = logits.mean()
