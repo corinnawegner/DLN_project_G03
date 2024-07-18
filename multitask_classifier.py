@@ -115,10 +115,10 @@ class MultitaskBERT(nn.Module):
         
         
         # pass on sigmoid into probabilities and make it into 0 or 1
-        probabilities = torch.sigmoid(output, dim=1)
-        predictions = (probabilities > 0.5).int()
+        # probabilities = torch.sigmoid(output, dim=1)
+        # predictions = (probabilities > 0.5).int()
         
-        return predictions
+        return output
 
         # raise NotImplementedError
 
@@ -136,8 +136,8 @@ class MultitaskBERT(nn.Module):
         output2 = self.forward(input_ids_2, attention_mask_2)
 
         #compute the cosinesimilarity
-        similarity = torch.nn.CosineSimilarity(dim=1)
-        logits = similarity(output1,output2)
+        # similarity = torch.nn.CosineSimilarity(dim=1)
+        # logits = similarity(output1,output2)
 
         # # compute the mean and std
         # mean_cosine = logits.mean()
@@ -370,9 +370,9 @@ def train_multitask(args):
 
                 optimizer.zero_grad()
                 logits = model.predict_similarity(b_ids_1,  b_mask_1, b_ids_2, b_mask_2)
-                #loss = F.mse_loss(logits.to(torch.float32), b_labels.view(-1).to(torch.float32))
+                loss = F.mse_loss(logits.to(torch.float32), b_labels.view(-1).to(torch.float32))
                 # l1_loss is better here as we may have extreme value in dataset
-                loss = F.l1_loss(logits.to(torch.float32), b_labels.view(-1).to(torch.float32))
+                # loss = F.l1_loss(logits.to(torch.float32), b_labels.view(-1).to(torch.float32))
                 loss.backward()
                 optimizer.step()
 
@@ -402,7 +402,7 @@ def train_multitask(args):
 
                 optimizer.zero_grad()
                 logits = model.predict_paraphrase(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
-                loss = F.binary_cross_entropy_with_logits(logits.view(-1), b_labels.view(-1).to(torch.float32))
+                loss = F.binary_cross_entropy_with_logits(logits.view(-1).to(torch.float32), b_labels.view(-1).to(torch.float32))
                 loss.backward()
                 optimizer.step()
 
