@@ -15,7 +15,7 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 
 TQDM_DISABLE = True
 
-batch_size = 32
+batch_size = 64
 
 def transform_data(dataset, max_length=256):
     """
@@ -66,7 +66,7 @@ def transform_data(dataset, max_length=256):
     labels = torch.stack(labels)
 
     dataset = TensorDataset(input_ids, attention_masks, labels)
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
 
     return dataloader
 
@@ -75,7 +75,7 @@ def train_model(model, train_data, dev_data, device, tokenizer): #todo: put dev_
     Train the model. Return and save the model.
     https://huggingface.co/docs/transformers/en/training#train-in-native-pytorch
     """
-    num_epochs = 50
+    num_epochs = 30
     num_training_steps = num_epochs * len(train_data)
     progress_bar = tqdm(range(num_training_steps))
 
