@@ -2,14 +2,6 @@
 
 This is the starting code for the default final project for the Deep Learning for Natural Language Processing course at the University of Göttingen. You can find the handout [here](https://docs.google.com/document/d/1pZiPDbcUVhU9ODeMUI_lXZKQWSsxr7GO/edit?usp=sharing&ouid=112211987267179322743&rtpof=true&sd=true)
 
-## Setup instructions
-
-* Follow `setup.sh` to properly setup a conda environment and install dependencies.
-* There is a detailed description of the code structure in [STRUCTURE.md](./STRUCTURE.md), including a description of which parts you will need to implement.
-* You are only allowed to use libraries that are installed by `setup.sh` (Use `setup_gwdg.sh` if you are using the GWDG clusters).
-* Libraries that give you other pre-trained models or embeddings are not allowed (e.g., `transformers`).
-* Use this template to create your README file of your repository: <https://github.com/gipplab/dnlp_readme_template>
-
 ## Project Description
 
 Please refer to the project description for a through explanation of the project and its parts.
@@ -34,15 +26,15 @@ Here, you should provide a group name you want to be referred to as, as well as 
 
 _Example:_
 
--   **Group name:**
+-   **Group name:** Text Titans
     
--   **Group code:**
+-   **Group code:** G03
     
 -   **Group repository:** https://github.com/corinnawegner/DLN_project_G03/
     
 -   **Tutor responsible:** [Niklas Bauer](https://github.com/ItsNiklas/)
     
--   **Group members:** Corinna Wegner, Minyan Fu, Yiyang Huang, Amin Nematbakhsh, Sebastian Ebert, 	 
+-   **Group members:** Corinna Wegner, Minyan Fu, Yiyang Huang, Amin Nematbakhsh 	 
 
   
 # Setup instructions 
@@ -53,6 +45,12 @@ In addition, if you used libraries that were not included in the conda environme
 Which files do we have to execute to train/evaluate your models? Write down the command which you used to execute the experiments. We should be able to reproduce the experiments/results.
 
 _Hint_: At the end of the project you can set up a new environment and follow your setup instructions making sure they are sufficient and if you can reproduce your results. 
+
+* Follow `setup.sh` to properly setup a conda environment and install dependencies.
+* There is a detailed description of the code structure in [STRUCTURE.md](./STRUCTURE.md), including a description of which parts you will need to implement.
+* You are only allowed to use libraries that are installed by `setup.sh` (Use `setup_gwdg.sh` if you are using the GWDG clusters).
+* Libraries that give you other pre-trained models or embeddings are not allowed (e.g., `transformers`).
+* Use this template to create your README file of your repository: <https://github.com/gipplab/dnlp_readme_template>
 
 # Methodology
 In this section explain what and how you did your project. 
@@ -138,16 +136,18 @@ For example, you could analyze different questions with those plots like:
 ## Members Contribution 
 Explain what member did what in the project:
 
-**Member 1:** _implemented the training objective using X, Y, and Z. Supported member 2 in refactoring the code. Data cleaning, etc._
+**Corinna Wegner:** _implemented the training objective using X, Y, and Z. Supported member 2 in refactoring the code. Data cleaning, etc._
 
-**Member 2:** ...
+**Minyan Fu** ...
 
-...
+**Yiyang Huang**
+
+**Amin Nematbakhsh**
 
 We should be able to understand each member's contribution within 5 minutes. 
 
 # AI-Usage Card
-Artificial Intelligence (AI) aided the development of this project. Please add a link to your AI-Usage card [here](https://ai-cards.org/).
+Artificial Intelligence (AI) aided the development of this project. For detailed information see our [AI Usage Card](https://www.overleaf.com/read/nqxwhfmkpnnv#73470b) based on [ai-cards.org](https://ai-cards.org/).
 
 # References 
 Write down all your references (other repositories, papers, etc.) that you used for your project.
