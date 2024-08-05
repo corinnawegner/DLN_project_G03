@@ -7,15 +7,24 @@ from sacrebleu.metrics import BLEU
 from torch.utils.data import DataLoader, TensorDataset
 from tqdm import tqdm
 from transformers import AutoTokenizer, BartForConditionalGeneration
-
 from optimizer import AdamW
 import warnings
+import socket
+
+try:
+    local_hostname = socket.gethostname()
+except:
+    local_hostname = None
+
+DEV_MODE = False
+if local_hostname == 'Corinna-PC': #Todo: Add also laptop
+    DEV_MODE = True
+
+TQDM_DISABLE = not DEV_MODE
+
+batch_size = 64 if not DEV_MODE else 1
 
 warnings.filterwarnings("ignore", category=FutureWarning)
-
-TQDM_DISABLE = True
-
-batch_size = 64
 
 def transform_data(dataset, max_length=256):
     """
@@ -66,23 +75,27 @@ def transform_data(dataset, max_length=256):
     labels = torch.stack(labels)
 
     dataset = TensorDataset(input_ids, attention_masks, labels)
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False) #Todo: Shuffle train dataset?
 
     return dataloader
 
-def train_model(model, train_data, dev_data, device, tokenizer): #todo: put dev_data back in
+def train_model(model, train_data, val_data, device, tokenizer, patience=5):
     """
-    Train the model. Return and save the model.
-    https://huggingface.co/docs/transformers/en/training#train-in-native-pytorch
+    Train the model. Return and save the best model.
+    https://huggingface.co/docs/transformers/en/training#train-in-native-pytorch #Todo: Put in references
     """
-    num_epochs = 30
+    if not DEV_MODE:
+        torch.cuda.empty_cache()
+
+    num_epochs = 50 if not DEV_MODE else 10
     num_training_steps = num_epochs * len(train_data)
     progress_bar = tqdm(range(num_training_steps))
 
     optimizer = AdamW(model.parameters(), lr=5e-5)
 
-    #best_bleu_score = 0
-    #best_model_state = None
+    best_bleu_score = -10
+    best_model_state = None
+    epochs_without_improvement = 0
 
     model.train()
     for epoch in range(num_epochs):
@@ -95,17 +108,27 @@ def train_model(model, train_data, dev_data, device, tokenizer): #todo: put dev_
             optimizer.zero_grad()
             progress_bar.update(1)
 
-       # if dev_data is not None:
-        #    bleu_score = evaluate_model(model, dev_data, device, tokenizer)
-       #     print(f"Validation BLEU score after epoch {epoch + 1}: {bleu_score:.3f}")
-#
-            # Save the best model
-       #     if bleu_score > best_bleu_score:
-         #       best_bleu_score = bleu_score
-         #       best_model_state = model.state_dict()
+        if val_data is not None:
+            bleu_score = evaluate_model(model, val_data, device, tokenizer)
+            print(f"Validation BLEU score after epoch {epoch + 1}: {bleu_score:.3f}")
 
-    #if best_model_state:
-      #  model.load_state_dict(best_model_state)
+            # Save the best model
+            if bleu_score > best_bleu_score:
+                print(f'new best bleu score: {bleu_score}')
+                best_bleu_score = bleu_score
+                best_model_state = model.state_dict()
+                epochs_without_improvement = 0
+            else:
+                print('no improvement')
+                epochs_without_improvement += 1
+
+            # Early stopping
+            if epochs_without_improvement >= patience:
+                print(f"Early stopping triggered after {epoch + 1} epochs.")
+                break
+
+    if best_model_state:
+        model.load_state_dict(best_model_state)
 
     return model
 
@@ -204,16 +227,16 @@ def get_args():
 
 def finetune_paraphrase_generation(args):
     device = torch.device("cuda") if args.use_gpu else torch.device("cpu")
-    model = BartForConditionalGeneration.from_pretrained("facebook/bart-large",  local_files_only=True)
+    model = BartForConditionalGeneration.from_pretrained("facebook/bart-large", local_files_only=True)
     model.to(device)
     tokenizer = AutoTokenizer.from_pretrained("facebook/bart-large", local_files_only=True)
 
-    train_dataset = pd.read_csv("data/etpc-paraphrase-train.csv", sep="\t")#[:10]
+    train_dataset = pd.read_csv("data/etpc-paraphrase-train.csv", sep="\t")
+    train_dataset = train_dataset if not DEV_MODE else train_dataset[:10]
     train_dataset_shuffled = train_dataset.sample(frac=1, random_state=42).reset_index(drop=True)
 
-    #dev_dataset = pd.read_csv("data/etpc-paraphrase-dev.csv", sep="\t")
-    #TODO: This is not in data
     test_dataset = pd.read_csv("data/etpc-paraphrase-generation-test-student.csv", sep="\t")#[:10]
+    test_dataset = test_dataset if not DEV_MODE else test_dataset[:10]
 
     # You might do a split of the train data into train/validation set here
     val_ratio = 0.2
@@ -221,17 +244,18 @@ def finetune_paraphrase_generation(args):
 
     train_dataset = train_dataset_shuffled.iloc[split_index:]
     val_dataset = train_dataset_shuffled.iloc[:split_index]
+    if DEV_MODE: #Trying to check if early stopping works
+        val_dataset = pd.read_csv("data/etpc-paraphrase-train.csv", sep="\t")[:15]
 
     train_data = transform_data(train_dataset)
     val_data = transform_data(val_dataset)
-    #dev_data = transform_data(dev_dataset) #Todo: Back
     test_data = transform_data(test_dataset)
 
     print(f"Loaded {len(train_dataset)} training samples.")
 
     bleu_score_before_training = evaluate_model(model, val_data, device, tokenizer)
 
-    model = train_model(model, train_data, val_data, device, tokenizer) #Todo: Add dev data if it exists
+    model = train_model(model, train_data, val_data, device, tokenizer, patience=5)
 
     print("Training finished.")
 
@@ -241,9 +265,10 @@ def finetune_paraphrase_generation(args):
 
     test_ids = test_dataset["id"]
     test_results = test_model(test_data, test_ids, device, model, tokenizer)
-    test_results.to_csv(
-        "predictions/bart/etpc-paraphrase-generation-test-output.csv", index=False, sep="\t"
-    )
+    if not DEV_MODE:
+        test_results.to_csv(
+            "predictions/bart/etpc-paraphrase-generation-test-output.csv", index=False, sep="\t"
+        )
 
 if __name__ == "__main__":
     args = get_args()
