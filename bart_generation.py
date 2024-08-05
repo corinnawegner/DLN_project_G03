@@ -17,7 +17,7 @@ except:
     local_hostname = None
 
 DEV_MODE = False
-if local_hostname == 'Corinna-PC': #Todo: Add also laptop
+if local_hostname == 'Corinna-PC' or local_hostname == "TABLET-TTS0K9R0": #Todo: Add also laptop
     DEV_MODE = True
 
 TQDM_DISABLE = not DEV_MODE
@@ -94,7 +94,6 @@ def train_model(model, train_data, val_data, device, tokenizer, patience=5):
     optimizer = AdamW(model.parameters(), lr=5e-5)
 
     best_bleu_score = -10
-    best_model_state = None
     epochs_without_improvement = 0
 
     model.train()
@@ -116,7 +115,6 @@ def train_model(model, train_data, val_data, device, tokenizer, patience=5):
             if bleu_score > best_bleu_score:
                 print(f'new best bleu score: {bleu_score}')
                 best_bleu_score = bleu_score
-                best_model_state = model.state_dict()
                 epochs_without_improvement = 0
             else:
                 print('no improvement')
@@ -126,9 +124,6 @@ def train_model(model, train_data, val_data, device, tokenizer, patience=5):
             if epochs_without_improvement >= patience:
                 print(f"Early stopping triggered after {epoch + 1} epochs.")
                 break
-
-    if best_model_state:
-        model.load_state_dict(best_model_state)
 
     return model
 
