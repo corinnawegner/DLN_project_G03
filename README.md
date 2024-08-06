@@ -6,21 +6,7 @@ This is the starting code for the default final project for the Deep Learning fo
 
 Please refer to the project description for a through explanation of the project and its parts.
 
-### Acknowledgement
-
-The project description, partial implementation, and scripts were adapted from the default final project for the Stanford [CS 224N class](https://web.stanford.edu/class/cs224n/) developed by Gabriel Poesia, John, Hewitt, Amelie Byun, John Cho, and their (large) team (Thank you!)
-
-The BERT implementation part of the project was adapted from the "minbert" assignment developed at Carnegie Mellon University's [CS11-711 Advanced NLP](http://phontron.com/class/anlp2021/index.html),
-created by Shuyan Zhou, Zhengbao Jiang, Ritam Dutt, Brendon Boldt, Aditya Veerubhotla, and Graham Neubig  (Thank you!)
-
-Parts of the code are from the [`transformers`](https://github.com/huggingface/transformers) library ([Apache License 2.0](./LICENSE)).
-
-Parts of the scripts and code were altered by [Jan Philip Wahle](https://jpwahle.com/) and [Terry Ruas](https://terryruas.com/).
-
-For the 2024 edition of the DNLP course at the University of Göttingen, the project was modified by [Niklas Bauer](https://github.com/ItsNiklas/), [Jonas Lührs](https://github.com/JonasLuehrs), ...
-
-
-# Group Name
+# Text Titans
 
 Here, you should provide a group name you want to be referred to as, as well as the names (and optionally contact info) of all group members. Additionally, define a group leader, i.e. one person in your group who is the primary contact if tutors want to communicate with your group. Also, mention here which tutor is assigned to your project.
 
@@ -148,6 +134,19 @@ We should be able to understand each member's contribution within 5 minutes.
 
 # AI-Usage Card
 Artificial Intelligence (AI) aided the development of this project. For detailed information see our [AI Usage Card](https://www.overleaf.com/read/nqxwhfmkpnnv#73470b) based on [ai-cards.org](https://ai-cards.org/).
+
+### Acknowledgement
+
+The project description, partial implementation, and scripts were adapted from the default final project for the Stanford [CS 224N class](https://web.stanford.edu/class/cs224n/) developed by Gabriel Poesia, John, Hewitt, Amelie Byun, John Cho, and their (large) team (Thank you!)
+
+The BERT implementation part of the project was adapted from the "minbert" assignment developed at Carnegie Mellon University's [CS11-711 Advanced NLP](http://phontron.com/class/anlp2021/index.html),
+created by Shuyan Zhou, Zhengbao Jiang, Ritam Dutt, Brendon Boldt, Aditya Veerubhotla, and Graham Neubig  (Thank you!)
+
+Parts of the code are from the [`transformers`](https://github.com/huggingface/transformers) library ([Apache License 2.0](./LICENSE)).
+
+Parts of the scripts and code were altered by [Jan Philip Wahle](https://jpwahle.com/) and [Terry Ruas](https://terryruas.com/).
+
+For the 2024 edition of the DNLP course at the University of Göttingen, the project was modified by [Niklas Bauer](https://github.com/ItsNiklas/), [Jonas Lührs](https://github.com/JonasLuehrs), ...
 
 # References 
 Write down all your references (other repositories, papers, etc.) that you used for your project.
