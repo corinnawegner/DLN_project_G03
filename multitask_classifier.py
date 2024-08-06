@@ -490,7 +490,7 @@ def get_args():
         type=str,
         help='choose between "sst","sts","qqp","etpc","multitask" to train for different tasks ',
         choices=("sst", "sts", "qqp", "etpc", "multitask"),
-        default="sst",
+        default="qqp",
     )
 
     # Model configuration
