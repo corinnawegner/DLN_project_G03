@@ -23,7 +23,18 @@ from datasets import (
 from evaluation import model_eval_multitask, test_model_multitask
 from optimizer import AdamW
 
-TQDM_DISABLE = True
+import socket
+
+try:
+    local_hostname = socket.gethostname()
+except:
+    local_hostname = None
+
+DEV_MODE = False
+if local_hostname == 'Corinna-PC' or local_hostname == "TABLET-TTS0K9R0": #Todo: Add also laptop
+    DEV_MODE = True
+
+TQDM_DISABLE = not DEV_MODE
 
 
 # fix the random seed
@@ -156,8 +167,6 @@ class MultitaskBERT(nn.Module):
         # return scaled_z_score
         
         return (logits+1)* 2.5
-
-
 
     def predict_paraphrase_types(
         self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2
@@ -610,7 +619,6 @@ def get_args():
 
     args = parser.parse_args()
     return args
-
 
 if __name__ == "__main__":
     args = get_args()
