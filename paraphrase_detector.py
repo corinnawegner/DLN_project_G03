@@ -53,7 +53,7 @@ def check_paraphrase(model_path, sentence1, sentence2):
 
     return probability
 
-model_path = f"models/pretrain-10-0.001-sst.pt"
+model_path = f"models/pretrain-10-0.001-qqp.pt"
 
 #sentence1 = "How do I use this code to get a response if two input sentences are paraphrases?"
 #sentence2 = "How can I determine if two sentences mean the same using this code?"
