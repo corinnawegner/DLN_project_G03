@@ -8,6 +8,7 @@ from torch.utils.data import DataLoader, TensorDataset
 from tqdm import tqdm
 from transformers import AutoTokenizer, BartForConditionalGeneration
 from optimizer import AdamW
+#from Sophia import SophiaG
 import warnings
 import socket
 
@@ -79,7 +80,7 @@ def transform_data(dataset, max_length=256):
 
     return dataloader
 
-def train_model(model, train_data, val_data, device, tokenizer, patience=5):
+def train_model(model, train_data, val_data, device, tokenizer, patience=3):
     """
     Train the model. Return and save the best model.
     https://huggingface.co/docs/transformers/en/training#train-in-native-pytorch #Todo: Put in references
@@ -92,6 +93,8 @@ def train_model(model, train_data, val_data, device, tokenizer, patience=5):
     progress_bar = tqdm(range(num_training_steps))
 
     optimizer = AdamW(model.parameters(), lr=5e-5)
+    #optimizer = SophiaG(model.parameters(), lr=2e-4, betas=(0.965, 0.99), rho = 0.01, weight_decay=1e-1)
+
 
     best_bleu_score = -10
     epochs_without_improvement = 0
