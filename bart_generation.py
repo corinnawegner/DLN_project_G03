@@ -164,22 +164,21 @@ def test_model(test_data, test_ids, device, model, tokenizer):
     return results
 
 
-def evaluate_model(model, test_data, device, tokenizer):
+def evaluate_model(model, dataloader, device, tokenizer):
     """
     You can use your train/validation set to evaluate models performance with the BLEU score.
-    test_data is a Pandas Dataframe, the column "sentence1" contains all input sentence and
+    test_data is a DataLoader, where the column "sentence1" contains all input sentence and
     the column "sentence2" contains all target sentences
     """
     model.eval()
     bleu = BLEU()
     predictions = []
+    references = []
+    inputs = []
 
-    dataloader = transform_data(test_data, shuffle=False)
     with torch.no_grad():
         for batch in dataloader:
-            input_ids, attention_mask, _ = batch
-            input_ids = input_ids.to(device)
-            attention_mask = attention_mask.to(device)
+            input_ids, attention_mask, labels = [tensor.to(device) for tensor in batch]
 
             # Generate paraphrases
             outputs = model.generate(
@@ -194,13 +193,16 @@ def evaluate_model(model, test_data, device, tokenizer):
                 tokenizer.decode(g, skip_special_tokens=True, clean_up_tokenization_spaces=True)
                 for g in outputs
             ]
-
+            references.extend([
+                tokenizer.decode(label, skip_special_tokens=True, clean_up_tokenization_spaces=True)
+                for label in labels
+            ])
+            inputs.extend([
+                tokenizer.decode(input_id, skip_special_tokens=True, clean_up_tokenization_spaces=True)
+                for input_id in input_ids
+            ])
             predictions.extend(pred_text)
 
-    inputs = test_data["sentence1"].tolist()
-    references = test_data["sentence2"].tolist()
-
-    model.train()
     # Calculate BLEU score
     bleu_score_reference = bleu.corpus_score(references, [predictions]).score
     # Penalize BLEU score if its to close to the input
@@ -209,7 +211,7 @@ def evaluate_model(model, test_data, device, tokenizer):
     print(f"BLEU Score: {bleu_score_reference}", f"Negative BLEU Score with input: {bleu_score_inputs}")
 
     # Penalize BLEU and rescale it to 0-100
-    # If you perfectly predict all the targets, you should get an penalized BLEU score of around 52
+    # todo: If you perfectly predict all the targets, you should get an penalized BLEU score of around 52
     penalized_bleu = bleu_score_reference * bleu_score_inputs / 52
     print(f"Penalized BLEU Score: {penalized_bleu}")
 
