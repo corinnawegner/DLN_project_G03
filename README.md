@@ -1,16 +1,12 @@
 # DNLP SS24 Final Project
 
-This is the starting code for the default final project for the Deep Learning for Natural Language Processing course at the University of Göttingen. You can find the handout [here](https://docs.google.com/document/d/1pZiPDbcUVhU9ODeMUI_lXZKQWSsxr7GO/edit?usp=sharing&ouid=112211987267179322743&rtpof=true&sd=true)
+This is the code by the Group "Text Titans" for the final project of the Deep Learning for Natural Language Processing course at the University of Göttingen. The project description is available [here](https://docs.google.com/document/d/1pZiPDbcUVhU9ODeMUI_lXZKQWSsxr7GO/edit?usp=sharing&ouid=112211987267179322743&rtpof=true&sd=true).
 
 ## Project Description
 
-Please refer to the project description for a through explanation of the project and its parts.
+This project focuses on implementing and improving models for various NLP tasks using BERT and BART. The key tasks include sentiment analysis, question similarity, semantic similarity, paraphrase detection, and paraphrase type generation. Initially, baseline implementations of BERT and BART are created for each task. In the second part, improvements are made on these baselines through techniques like additional pretraining, multitask fine-tuning, and contrastive learning.
 
 # Text Titans
-
-Here, you should provide a group name you want to be referred to as, as well as the names (and optionally contact info) of all group members. Additionally, define a group leader, i.e. one person in your group who is the primary contact if tutors want to communicate with your group. Also, mention here which tutor is assigned to your project.
-
-_Example:_
 
 -   **Group name:** Text Titans
     
@@ -20,7 +16,7 @@ _Example:_
     
 -   **Tutor responsible:** [Niklas Bauer](https://github.com/ItsNiklas/)
     
--   **Group members:** Corinna Wegner, Minyan Fu, Yiyang Huang, Amin Nematbakhsh 	 
+-   **Group members:** [Corinna Wegner](https://github.com/corinnawegner), [Minyan Fu](https://github.com/Minyan-Fu), [Yiyang Huang](https://github.com/yiyang26), [Amin Nematbakhsh](https://github.com/nematbakhsh)
 
   
 # Setup instructions 
@@ -105,7 +101,6 @@ Discuss your results, observations, correlations, etc.
 
 Results should have three-digit precision.
  
-
 ### Hyperparameter Optimization 
 Describe briefly how you found your optimal hyperparameter. If you focussed strongly on Hyperparameter Optimization, you can also include it in the Experiment section. 
 
@@ -122,20 +117,20 @@ For example, you could analyze different questions with those plots like:
 ## Members Contribution 
 Explain what member did what in the project:
 
-**Corinna Wegner:** _implemented the training objective using X, Y, and Z. Supported member 2 in refactoring the code. Data cleaning, etc._
+**Corinna Wegner:** Paraphrase generation task
 
-**Minyan Fu** ...
+**Minyan Fu:** 
 
-**Yiyang Huang**
+**Yiyang Huang:**
 
-**Amin Nematbakhsh**
+**Amin Nematbakhsh:**
 
 We should be able to understand each member's contribution within 5 minutes. 
 
 # AI-Usage Card
 Artificial Intelligence (AI) aided the development of this project. For detailed information see our [AI Usage Card](https://www.overleaf.com/read/nqxwhfmkpnnv#73470b) based on [ai-cards.org](https://ai-cards.org/).
 
-### Acknowledgement
+## Acknowledgement
 
 The project description, partial implementation, and scripts were adapted from the default final project for the Stanford [CS 224N class](https://web.stanford.edu/class/cs224n/) developed by Gabriel Poesia, John, Hewitt, Amelie Byun, John Cho, and their (large) team (Thank you!)
 
