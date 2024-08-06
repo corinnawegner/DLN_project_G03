@@ -4,13 +4,16 @@ import numpy as np
 import pandas as pd
 import torch
 from sacrebleu.metrics import BLEU
+from nltk.translate.meteor_score import single_meteor_score
 from torch.utils.data import DataLoader, TensorDataset
 from tqdm import tqdm
 from transformers import AutoTokenizer, BartForConditionalGeneration
 from optimizer import AdamW
-#from Sophia import SophiaG
+
 import warnings
 import socket
+import nltk
+nltk.download('wordnet')
 
 try:
     local_hostname = socket.gethostname()
@@ -95,7 +98,7 @@ def train_model(model, train_data, val_data, device, tokenizer, patience=3):
     optimizer = AdamW(model.parameters(), lr=5e-5)
     #optimizer = SophiaG(model.parameters(), lr=2e-4, betas=(0.965, 0.99), rho = 0.01, weight_decay=1e-1)
 
-
+    bleu_scores = []
     best_bleu_score = -10
     epochs_without_improvement = 0
 
@@ -111,21 +114,23 @@ def train_model(model, train_data, val_data, device, tokenizer, patience=3):
             progress_bar.update(1)
 
         if val_data is not None:
-            bleu_score = evaluate_model(model, val_data, device, tokenizer)
-            print(f"Validation BLEU score after epoch {epoch + 1}: {bleu_score:.3f}")
+            scores = evaluate_model(model, val_data, device, tokenizer)
+            b = scores['bleu_score']
+            bleu_scores.append(b)
 
             # Save the best model
-            if bleu_score > best_bleu_score:
-                print(f'new best bleu score: {bleu_score}')
-                best_bleu_score = bleu_score
+            if b > best_bleu_score:
+                best_bleu_score = scores['bleu_score']
+                best_epoch = epoch + 1
                 epochs_without_improvement = 0
             else:
-                print('no improvement')
                 epochs_without_improvement += 1
 
             # Early stopping
             if epochs_without_improvement >= patience:
-                print(f"Early stopping triggered after {epoch + 1} epochs.")
+                print(f"Early stopping triggered after {epoch + 1} epochs. \n")
+                print(f'Best BLEU score: {best_bleu_score} at epoch {best_epoch}. \n')
+                print(f"History: {bleu_scores}")
                 break
 
     return model
@@ -215,7 +220,10 @@ def evaluate_model(model, dataloader, device, tokenizer):
     penalized_bleu = bleu_score_reference * bleu_score_inputs / 52
     print(f"Penalized BLEU Score: {penalized_bleu}")
 
-    return penalized_bleu
+    meteor_score = single_meteor_score(references, predictions)
+
+    return {"bleu_score": penalized_bleu, "meteor_score": meteor_score}
+
 
 
 def seed_everything(seed=11711):
@@ -263,15 +271,18 @@ def finetune_paraphrase_generation(args):
 
     print(f"Loaded {len(train_dataset)} training samples.")
 
-    bleu_score_before_training = evaluate_model(model, val_data, device, tokenizer)
+    scores_before_training = evaluate_model(model, val_data, device, tokenizer)
+    bleu_score_before_training, meteor_score_before_training = scores_before_training.values()
 
-    model = train_model(model, train_data, val_data, device, tokenizer, patience=5)
+    #model = train_model(model, train_data, val_data, device, tokenizer, patience=5)
 
     print("Training finished.")
 
-    bleu_score = evaluate_model(model, val_data, device, tokenizer)
-    print(f"The BLEU-score of the model is: {bleu_score:.3f}")
-    print(f"Without training: {bleu_score_before_training:.3f}")
+    scores = evaluate_model(model, val_data, device, tokenizer)
+    bleu_score, meteor_score = scores.values()
+    print(f"The penalized BLEU-score of the model is: {bleu_score:.3f}")
+    print(f"The METEOR-score of the model is: {meteor_score:.3f}")
+    print(f"Without training: \n BLEU: {bleu_score_before_training:.3f} \n METEOR: {meteor_score_before_training}")
 
     test_ids = test_dataset["id"]
     test_results = test_model(test_data, test_ids, device, model, tokenizer)
