@@ -82,11 +82,11 @@ def main():
     train_data = bart_generation.transform_data(train_dataset)
     val_data = bart_generation.transform_data(val_dataset)
     evaluator_model_path = "models/pretrain-10-0.001-sst.pt"
-
-    print('Training generator. \n')
-    #bart_generation.train_model(model, train_data, val_data, device, tokenizer)
-    score_before_finetune = bart_generation.evaluate_model(model, val_data, device, tokenizer)
-    print(f'Score before fine-tuning with evaluator: {score_before_finetune} \n')
+    if TRAINING:
+        print('Training generator. \n')
+        bart_generation.train_model(model, train_data, val_data, device, tokenizer)
+        score_before_finetune = bart_generation.evaluate_model(model, val_data, device, tokenizer)
+        print(f'Score before fine-tuning with evaluator: {score_before_finetune} \n')
     print('Training generator with feedback from evaluator. \n')
     fine_tune_generator(model, evaluator_model_path, train_data, device, tokenizer, num_epochs=3)
     score_after_finetune = bart_generation.evaluate_model(model, val_data, device, tokenizer)

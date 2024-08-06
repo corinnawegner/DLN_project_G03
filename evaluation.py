@@ -28,8 +28,17 @@ from datasets import (
     load_multitask_data,
 )
 
-TQDM_DISABLE = True
+import socket
 
+try:
+    local_hostname = socket.gethostname()
+except:
+    local_hostname = None
+
+DEV_MODE = False
+if local_hostname == 'Corinna-PC' or local_hostname == "TABLET-TTS0K9R0": #Todo: Add also laptop
+    DEV_MODE = True
+TQDM_DISABLE = not DEV_MODE
 
 # Perform model evaluation
 def model_eval_multitask(
@@ -200,7 +209,6 @@ def model_eval_multitask(
         etpc_y_pred,
         etpc_sent_ids,
     )
-
 
 # Perform model evaluation in terms by averaging accuracies across tasks.
 def model_eval_test_multitask(

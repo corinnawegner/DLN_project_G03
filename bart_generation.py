@@ -272,15 +272,15 @@ def finetune_paraphrase_generation(args):
     print("Training finished.")
 
     bleu_score = evaluate_model(model, val_data, device, tokenizer)
-    print(f"The BLEU-score of the model is: {bleu_score:.3f}")
+    print(f"The penalized BLEU-score of the model is: {bleu_score:.3f}")
     print(f"Without training: {bleu_score_before_training:.3f}")
 
-    test_ids = test_dataset["id"]
-    test_results = test_model(test_data, test_ids, device, model, tokenizer)
-    if not DEV_MODE:
-        test_results.to_csv(
-            "predictions/bart/etpc-paraphrase-generation-test-output.csv", index=False, sep="\t"
-        )
+    #test_ids = test_dataset["id"]
+    #test_results = test_model(test_data, test_ids, device, model, tokenizer)
+    #if not DEV_MODE:
+     #   test_results.to_csv(
+      #      "predictions/bart/etpc-paraphrase-generation-test-output.csv", index=False, sep="\t"
+       # )
 
 if __name__ == "__main__":
     args = get_args()
