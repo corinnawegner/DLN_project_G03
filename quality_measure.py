@@ -1,11 +1,11 @@
-import nltk
-from nltk.tree import Tree
-from nltk.tokenize import word_tokenize
 import numpy as np
 import difflib
 import torch
 from bleurt_pytorch import BleurtConfig, BleurtForSequenceClassification, BleurtTokenizer
 import warnings
+import nltk
+from nltk import word_tokenize, Tree
+
 # Download necessary NLTK data files (run these lines once)
 nltk.download('punkt')
 nltk.download('averaged_perceptron_tagger')
@@ -17,10 +17,9 @@ def parse_sentence(sentence):
     tokens = word_tokenize(sentence)
     pos_tags = nltk.pos_tag(tokens)
     # Create a simple POS-based parse tree
-    # Note: This is a placeholder for real parsing; a more sophisticated parser is recommended
+    # Todo: Note: This is a placeholder for real parsing; a more sophisticated parser is recommended
     parse_tree = Tree('S', [Tree(pos, [token]) for token, pos in pos_tags])
     return parse_tree
-
 
 def tree_edit_distance(tree1, tree2):
     """Compute the tree edit distance between two trees."""
@@ -61,8 +60,13 @@ def compute_bleurt_score(reference, candidate, model, tokenizer):
     return scores[0]
 
 
-def quality_vector(s, s_prime, model, tokenizer):
+def quality_vector(s, s_prime):
     """Compute the quality vector for two sentences."""
+    # Load BLEURT model and tokenizer
+    config = BleurtConfig.from_pretrained('lucadiliello/BLEURT-20-D12')
+    model = BleurtForSequenceClassification.from_pretrained('lucadiliello/BLEURT-20-D12')
+    tokenizer = BleurtTokenizer.from_pretrained('lucadiliello/BLEURT-20-D12')
+
     # Semantic quality
     qsem = compute_bleurt_score([s], [s_prime], model, tokenizer)
 
@@ -83,15 +87,11 @@ def quality_vector(s, s_prime, model, tokenizer):
 
     return (qsem_normalized, qsyn_normalized, qlex_normalized)
 
-
-# Load BLEURT model and tokenizer
-config = BleurtConfig.from_pretrained('lucadiliello/BLEURT-20-D12')
-model = BleurtForSequenceClassification.from_pretrained('lucadiliello/BLEURT-20-D12')
-tokenizer = BleurtTokenizer.from_pretrained('lucadiliello/BLEURT-20-D12')
-
+"""
 # Example usage
 s = "The quick brown fox jumps over the lazy dog."
 s_prime = "A fast, dark-colored fox leaps over a sleepy dog."
 
-quality = quality_vector(s, s_prime, model, tokenizer)
+quality = quality_vector(s, s_prime)
 print(f"Quality Vector: {quality}")
+"""

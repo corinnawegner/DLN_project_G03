@@ -11,6 +11,7 @@ import torch
 import torch.nn as nn
 from transformers import ElectraTokenizer, ElectraModel
 from sklearn.metrics import mean_squared_error
+import quality_measure as qm
 
 try:
     local_hostname = socket.gethostname()
@@ -189,6 +190,32 @@ def train_tset_split(df):
     test_dataset = prepare_data(test_df)
     return train_dataset, test_dataset
 
+def load_etpc_paraphrase():
+    dataset = pd.read_csv("data/etpc-paraphrase-train.csv", sep="\t")
+    list_s1 = []
+    list_s2 = []
+    list_sem = []
+    list_syn = []
+    list_lex = []
+    for _, row in tqdm(dataset.iterrows(), total=len(dataset), disable=TQDM_DISABLE):
+        sentence_1 = row['sentence1']
+        sentence_2 = row['sentence2']
+        list_s1.append(sentence_1)
+        list_s2.append(sentence_2)
+        qv = qm.quality_vector(sentence_1, sentence_2)
+        list_sem.append(qv[0])
+        list_syn.append(qv[1])
+        list_lex.append(qv[2])
+        # (qsem_normalized, qsyn_normalized, qlex_normalized)
+    data = {
+        'sentence_1': list_s1,
+        'sentence_2': list_s2,
+        'quality_sem': list_sem,
+        'quality_syn': list_syn,
+        'quality_lex': list_lex
+    }
+    df = pd.DataFrame(data)
+    return df
 
 """
 # Example inference

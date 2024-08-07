@@ -47,7 +47,7 @@ def transform_data(dataset, max_length=256):
     Return Data Loader.
     """
     tokenizer = AutoTokenizer.from_pretrained("facebook/bart-large")
-    df_data = qp_model.load_toy_data() #Todo: Replace with real training data
+    df_data = qp_model.load_etpc_paraphrase()  # qp_model.load_toy_data() #Todo: Replace with real training data
     qpmodel = QP(df_data)
 
     input_ids = []
@@ -147,7 +147,6 @@ def train_model(model, train_data, val_data, device, tokenizer, patience=3):
                 print(f'Best BLEU score: {best_bleu_score} at epoch {best_epoch}. \n')
                 print(f"History: {bleu_scores}")
                 break
-
     return model
 
 def test_model(test_data, test_ids, device, model, tokenizer):
@@ -180,9 +179,7 @@ def test_model(test_data, test_ids, device, model, tokenizer):
         'id': test_ids,
         'Generated_sentence2': generated_sentences
     })
-
     return results
-
 
 def evaluate_model(model, dataloader, device, tokenizer):
     """
@@ -239,8 +236,6 @@ def evaluate_model(model, dataloader, device, tokenizer):
 
     return {"bleu_score": penalized_bleu, "meteor_score": meteor_score}
 
-
-
 def seed_everything(seed=11711):
     random.seed(seed)
     np.random.seed(seed)
@@ -257,7 +252,6 @@ def get_args():
     args = parser.parse_args()
     return args
 
-
 def finetune_paraphrase_generation(args):
     device = torch.device("cuda") if args.use_gpu else torch.device("cpu")
     model = BartForConditionalGeneration.from_pretrained("facebook/bart-large", local_files_only=True)
@@ -268,8 +262,8 @@ def finetune_paraphrase_generation(args):
     train_dataset = train_dataset if not DEV_MODE else train_dataset[:10]
     train_dataset_shuffled = train_dataset.sample(frac=1, random_state=42).reset_index(drop=True)
 
-    #test_dataset = pd.read_csv("data/etpc-paraphrase-generation-test-student.csv", sep="\t")#[:10]
-    #test_dataset = test_dataset if not DEV_MODE else test_dataset[:10]
+    test_dataset = pd.read_csv("data/etpc-paraphrase-generation-test-student.csv", sep="\t")#[:10]
+    test_dataset = test_dataset if not DEV_MODE else test_dataset[:10]
 
     # You might do a split of the train data into train/validation set here
     val_ratio = 0.2
@@ -299,6 +293,7 @@ def finetune_paraphrase_generation(args):
     print(f"The METEOR-score of the model is: {meteor_score:.3f}")
     print(f"Without training: \n BLEU: {bleu_score_before_training:.3f} \n METEOR: {meteor_score_before_training}")
 
+    #Todo: Put back test if needed
     #test_ids = test_dataset["id"]
     #test_results = test_model(test_data, test_ids, device, model, tokenizer)
     #if not DEV_MODE:
