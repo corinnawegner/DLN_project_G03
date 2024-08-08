@@ -4,16 +4,16 @@ import numpy as np
 import pandas as pd
 import torch
 from sacrebleu.metrics import BLEU
-from nltk.translate.meteor_score import single_meteor_score
+#from nltk.translate.meteor_score import single_meteor_score
 from torch.utils.data import DataLoader, TensorDataset
 from tqdm import tqdm
-from transformers import AutoTokenizer, BartForConditionalGeneration
+from transformers import AutoTokenizer, BartForConditionalGeneration, BartConfig
 from optimizer import AdamW
 
 import warnings
 import socket
-import nltk
-nltk.download('wordnet')
+#import nltk
+#nltk.download('wordnet')
 
 try:
     local_hostname = socket.gethostname()
@@ -26,11 +26,11 @@ if local_hostname == 'Corinna-PC' or local_hostname == "TABLET-TTS0K9R0": #Todo:
 
 TQDM_DISABLE = not DEV_MODE
 
-batch_size = 64 if not DEV_MODE else 1
+#batch_size = 64 if not DEV_MODE else 1
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 
-def transform_data(dataset, max_length=256):
+def transform_data(dataset, batch_size,max_length=256):
     """
     Turn the data to the format you want to use.
     Use AutoTokenizer to obtain encoding (input_ids and attention_mask).
@@ -83,7 +83,7 @@ def transform_data(dataset, max_length=256):
 
     return dataloader
 
-def train_model(model, train_data, val_data, device, tokenizer,learning_rate = 5e-5, patience=3):
+def train_model(model, train_data, val_data, device, tokenizer, learning_rate = 5e-5, patience=3):
     """
     Train the model. Return and save the best model.
     https://huggingface.co/docs/transformers/en/training#train-in-native-pytorch #Todo: Put in references
@@ -220,9 +220,9 @@ def evaluate_model(model, dataloader, device, tokenizer):
     penalized_bleu = bleu_score_reference * bleu_score_inputs / 52
     print(f"Penalized BLEU Score: {penalized_bleu}")
 
-    meteor_score = single_meteor_score(references, predictions)
+    #meteor_score = single_meteor_score(references, predictions)
 
-    return {"bleu_score": penalized_bleu, "meteor_score": meteor_score}
+    return {"bleu_score": penalized_bleu, "meteor_score": "meteor_score not computed"}
 
 def seed_everything(seed=11711):
     random.seed(seed)
@@ -243,51 +243,68 @@ def get_args():
 
 def finetune_paraphrase_generation(args):
     device = torch.device("cuda") if args.use_gpu else torch.device("cpu")
-    model = BartForConditionalGeneration.from_pretrained("facebook/bart-large", local_files_only=True)
-    model.to(device)
+    config = BartConfig.from_pretrained("facebook/bart-large")
+
     tokenizer = AutoTokenizer.from_pretrained("facebook/bart-large", local_files_only=True)
 
     train_dataset = pd.read_csv("data/etpc-paraphrase-train.csv", sep="\t")
     train_dataset = train_dataset if not DEV_MODE else train_dataset[:10]
     train_dataset_shuffled = train_dataset.sample(frac=1, random_state=42).reset_index(drop=True)
 
+    val_dataset = train_dataset_shuffled.sample(frac=0.2, random_state=42)
+    train_dataset = train_dataset_shuffled.drop(val_dataset.index)
+
     #test_dataset = pd.read_csv("data/etpc-paraphrase-generation-test-student.csv", sep="\t")#[:10]
     #test_dataset = test_dataset if not DEV_MODE else test_dataset[:10] #todo: put back
 
     # You might do a split of the train data into train/validation set here
-    val_ratio = 0.2
-    split_index = int(len(train_dataset_shuffled) * val_ratio)
+    #val_ratio = 0.2 #todo: This is done later in one line
+    #split_index = int(len(train_dataset_shuffled) * val_ratio)
 
-    train_dataset = train_dataset_shuffled.iloc[split_index:]
-    val_dataset = train_dataset_shuffled.iloc[:split_index]
-    if DEV_MODE: #Trying to check if early stopping works
-        val_dataset = pd.read_csv("data/etpc-paraphrase-train.csv", sep="\t")[:15]
-
-    train_data = transform_data(train_dataset)
-    val_data = transform_data(val_dataset)
-    #test_data = transform_data(test_dataset)
+    #train_dataset = train_dataset_shuffled.iloc[split_index:]
+    #val_dataset = train_dataset_shuffled.iloc[:split_index]
+    #if DEV_MODE: #Trying to check if early stopping works
+     #   val_dataset = pd.read_csv("data/etpc-paraphrase-train.csv", sep="\t")[:15]
 
     print(f"Loaded {len(train_dataset)} training samples.")
 
-    scores_before_training = evaluate_model(model, val_data, device, tokenizer)
-    bleu_score_before_training, meteor_score_before_training = scores_before_training.values()
-
     best_bleu = 0
     best_lr = 0
-    for lr in [1e-5, 5e-5, 8e-5, 1e-4, 1e-3, 1e-6, 1e-7]: #Todo: optimize also val_ratio, patience, batch_size
-        model = train_model(model, train_data, val_data, device, tokenizer, learning_rate=lr,patience=3)
+    best_dropout = 42
+    best_batchsize = 0
 
-    #print("Training finished.")
+    hyperparameter_grid = {
+        'learning_rate': [1e-5, 5e-5, 8e-5, 1e-4, 1e-6],
+        'batch_size': [32, 64, 128],
+        'dropout_rate': [0.3, 0.0]
+    }
 
-        scores = evaluate_model(model, val_data, device, tokenizer)
-        bleu_score, meteor_score = scores.values()
-        print(f"Results for learning rate {lr}:")
-        print(f"The penalized BLEU-score of the model is: {bleu_score:.3f}")
-        print(f"The METEOR-score of the model is: {meteor_score:.3f}")
-        print(f"Without training: \n BLEU: {bleu_score_before_training:.3f} \n METEOR: {meteor_score_before_training}")
-        if bleu_score > best_bleu:
-            best_lr = lr
-    print(f"Best LR: {best_lr}")
+    if not DEV_MODE:
+        for dropout in hyperparameter_grid['dropout_rate']:
+            config.attention_dropout = dropout
+            config.activation_dropout = dropout
+            config.dropout = dropout
+            model = BartForConditionalGeneration.from_pretrained("facebook/bart-large", config=config, local_files_only=True)
+            model.to(device)
+            for b in hyperparameter_grid['batch_size']:
+                train_data = transform_data(train_dataset, batch_size=b)
+                val_data = transform_data(val_dataset, batch_size=b)
+                for lr in hyperparameter_grid['learning_rate']:
+                    #scores_before_training = evaluate_model(model, val_data, device, tokenizer)
+                    #bleu_score_before_training, _ = scores_before_training.values()
+                    model = train_model(model, train_data, val_data, device, tokenizer, learning_rate=lr, patience=3)
+                    scores = evaluate_model(model, val_data, device, tokenizer)
+                    bleu_score, _ = scores.values()
+                    print(f"Results for learning rate {lr}, batch_size: {b}, dropout rate: {dropout}:")
+                    print(f"The penalized BLEU-score of the model is: {bleu_score:.3f}")
+                    #print(f"The METEOR-score of the model is: {meteor_score:.3f}")
+                    #print(f"Without training: \n BLEU: {bleu_score_before_training:.3f}")# \n METEOR: {meteor_score_before_training}")
+                    if bleu_score > best_bleu:
+                        best_bleu = bleu_score
+                        best_lr = lr
+                        best_batchsize = b
+                        best_dropout = dropout
+    print(f"Best params: \n LR: {best_lr} \n batch size: {best_batchsize} \n dropout: {best_dropout}")
 
     #test_ids = test_dataset["id"]
     #test_results = test_model(test_data, test_ids, device, model, tokenizer)
