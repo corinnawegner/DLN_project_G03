@@ -37,6 +37,7 @@ def predict_paraphrase(self, sentence1, sentence2, tokenizer, device):
         return probability
 
 def check_paraphrase(model_path, sentence1, sentence2):
+    tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Load the trained model
@@ -47,13 +48,11 @@ def check_paraphrase(model_path, sentence1, sentence2):
     model.load_state_dict(saved["model"])
     model = model.to(device)
 
-    tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
-
     probability = predict_paraphrase(model, sentence1, sentence2, tokenizer, device)
 
     return probability
 
-model_path = f"models/pretrain-10-0.001-qqp.pt"
+model_path = f"models/finetune-10-1e-05-qqp.pt"
 
 #sentence1 = "How do I use this code to get a response if two input sentences are paraphrases?"
 #sentence2 = "How can I determine if two sentences mean the same using this code?"

@@ -67,7 +67,7 @@ def fine_tune_generator(model, evaluator_model_path, train_data, device, tokeniz
             log_probs = torch.sum(torch.log(torch.cat([model(input_ids=i.unsqueeze(0), attention_mask=a.unsqueeze(0))[0] for i, a in zip(input_ids, attention_mask)])), dim=1)
             loss = -torch.mean(log_probs * rewards)
 
-            loss.backward()
+            loss.backward() #Todo: Is this really RL?
             optimizer.step()
             optimizer.zero_grad()
 
