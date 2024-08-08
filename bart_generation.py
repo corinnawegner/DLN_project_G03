@@ -23,6 +23,7 @@ except:
 DEV_MODE = False
 if local_hostname == 'Corinna-PC' or local_hostname == "TABLET-TTS0K9R0": #Todo: Add also laptop
     DEV_MODE = True
+DEV_MODE = False
 
 TQDM_DISABLE = not DEV_MODE
 
@@ -91,7 +92,7 @@ def train_model(model, train_data, val_data, device, tokenizer, learning_rate = 
     if not DEV_MODE:
         torch.cuda.empty_cache()
 
-    num_epochs = 50 if not DEV_MODE else 10
+    num_epochs = 30 if not DEV_MODE else 10
     num_training_steps = num_epochs * len(train_data)
     progress_bar = tqdm(range(num_training_steps))
 
@@ -245,8 +246,6 @@ def get_args():
 
 def finetune_paraphrase_generation(args):
     device = torch.device("cuda") if args.use_gpu else torch.device("cpu")
-    config = BartConfig.from_pretrained("facebook/bart-large")
-
     tokenizer = AutoTokenizer.from_pretrained("facebook/bart-large", local_files_only=True)
 
     train_dataset = pd.read_csv("data/etpc-paraphrase-train.csv", sep="\t")
@@ -282,19 +281,22 @@ def finetune_paraphrase_generation(args):
     }
 
     hyperparameter_grid = {
-        'learning_rate': [1e-5, 5e-5, 8e-5, 1e-4, 1e-6],
-        'batch_size': [64, 32],
-        'dropout_rate': [0.3, 0.1, 0.0]
+        'learning_rate': [1e-5],# 5e-5, 8e-5, 1e-4, 1e-6],
+        'batch_size': [64],
+        'dropout_rate': [0.0]#, 0.1, 0.0]
     }
 
     #if not DEV_MODE:
     for dropout in hyperparameter_grid['dropout_rate']:
-        config.attention_dropout = dropout
-        config.activation_dropout = dropout
-        config.dropout = dropout
-        model = BartForConditionalGeneration.from_pretrained("facebook/bart-large", config=config, local_files_only=True)
-        model.to(device)
+        if dropout > 0:
+            config = BartConfig.from_pretrained("facebook/bart-large")
+            config.attention_dropout = dropout
+            config.activation_dropout = dropout
+            config.dropout = dropout
         for b in hyperparameter_grid['batch_size']:
+            model = BartForConditionalGeneration.from_pretrained("facebook/bart-large", config=config,
+                                                                 local_files_only=True)
+            model.to(device)
             train_data = transform_data(train_dataset, batch_size=b)
             val_data = transform_data(val_dataset, batch_size=b)
             for lr in hyperparameter_grid['learning_rate']:
