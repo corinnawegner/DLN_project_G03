@@ -50,10 +50,20 @@ def check_paraphrase(model_path, sentence1, sentence2):
 # Reinforcement Learning fine-tuning step
 def fine_tune_generator(model, evaluator_model_path, train_data, device, tokenizer, num_epochs=3):
     optimizer = AdamW(model.parameters(), lr=5e-6)
-    evaluator = multitask_classifier.MultitaskBERT(torch.load(evaluator_model_path)["model_config"])
-    evaluator.load_state_dict(torch.load(evaluator_model_path)["model"])
-    evaluator = evaluator.to(device)
     evaluator_tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
+
+    import torch
+
+    if torch.cuda.is_available():
+        evaluator = multitask_classifier.MultitaskBERT(torch.load(evaluator_model_path)["model_config"])
+        evaluator.load_state_dict(torch.load(evaluator_model_path)["model"])
+
+    else:
+        evaluator = multitask_classifier.MultitaskBERT(
+            torch.load(evaluator_model_path, map_location=torch.device('cpu'))["model_config"])
+        evaluator.load_state_dict(torch.load(evaluator_model_path, map_location=torch.device('cpu'))["model"])
+
+    evaluator = evaluator.to(device)
 
     model.train()
     for epoch in tqdm(range(num_epochs)):
@@ -81,12 +91,12 @@ def main():
     val_dataset = train_dataset.sample(frac=0.2, random_state=42)
     train_data = bart_generation.transform_data(train_dataset)
     val_data = bart_generation.transform_data(val_dataset)
-    evaluator_model_path = "models/pretrain-10-0.001-sst.pt"
+    evaluator_model_path = "models/finetune-10-1e-05-qqp.pt"
     if TRAINING:
         print('Training generator. \n')
         bart_generation.train_model(model, train_data, val_data, device, tokenizer)
-        score_before_finetune = bart_generation.evaluate_model(model, val_data, device, tokenizer)
-        print(f'Score before fine-tuning with evaluator: {score_before_finetune} \n')
+    score_before_finetune = bart_generation.evaluate_model(model, val_data, device, tokenizer)
+    print(f'Score before fine-tuning with evaluator: {score_before_finetune} \n')
     print('Training generator with feedback from evaluator. \n')
     fine_tune_generator(model, evaluator_model_path, train_data, device, tokenizer, num_epochs=3)
     score_after_finetune = bart_generation.evaluate_model(model, val_data, device, tokenizer)

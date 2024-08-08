@@ -267,7 +267,7 @@ def finetune_paraphrase_generation(args):
     bleu_score_before_training = evaluate_model(model, val_data, device, tokenizer)
 
     if TRAINING:
-        model = train_model(model, train_data, val_data, device, tokenizer, patience=5)
+        model = train_model(model, train_data, val_data, device, tokenizer, patience=3)
 
     print("Training finished.")
 
