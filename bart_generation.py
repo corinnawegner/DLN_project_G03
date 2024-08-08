@@ -79,11 +79,11 @@ def transform_data(dataset, max_length=256):
     labels = torch.stack(labels)
 
     dataset = TensorDataset(input_ids, attention_masks, labels)
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False) #Todo: Shuffle train dataset?
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False) #Todo: Shuffle train dataset? I think I do this when loading the dataset
 
     return dataloader
 
-def train_model(model, train_data, val_data, device, tokenizer, patience=3):
+def train_model(model, train_data, val_data, device, tokenizer,learning_rate = 5e-5, patience=3):
     """
     Train the model. Return and save the best model.
     https://huggingface.co/docs/transformers/en/training#train-in-native-pytorch #Todo: Put in references
@@ -95,12 +95,12 @@ def train_model(model, train_data, val_data, device, tokenizer, patience=3):
     num_training_steps = num_epochs * len(train_data)
     progress_bar = tqdm(range(num_training_steps))
 
-    optimizer = AdamW(model.parameters(), lr=5e-5)
-    #optimizer = SophiaG(model.parameters(), lr=2e-4, betas=(0.965, 0.99), rho = 0.01, weight_decay=1e-1)
+    optimizer = AdamW(model.parameters(), lr=learning_rate)
 
     bleu_scores = []
     best_bleu_score = -10
     epochs_without_improvement = 0
+    best_epoch = 0
 
     model.train()
     for epoch in range(num_epochs):
@@ -224,8 +224,6 @@ def evaluate_model(model, dataloader, device, tokenizer):
 
     return {"bleu_score": penalized_bleu, "meteor_score": meteor_score}
 
-
-
 def seed_everything(seed=11711):
     random.seed(seed)
     np.random.seed(seed)
@@ -253,8 +251,8 @@ def finetune_paraphrase_generation(args):
     train_dataset = train_dataset if not DEV_MODE else train_dataset[:10]
     train_dataset_shuffled = train_dataset.sample(frac=1, random_state=42).reset_index(drop=True)
 
-    test_dataset = pd.read_csv("data/etpc-paraphrase-generation-test-student.csv", sep="\t")#[:10]
-    test_dataset = test_dataset if not DEV_MODE else test_dataset[:10]
+    #test_dataset = pd.read_csv("data/etpc-paraphrase-generation-test-student.csv", sep="\t")#[:10]
+    #test_dataset = test_dataset if not DEV_MODE else test_dataset[:10] #todo: put back
 
     # You might do a split of the train data into train/validation set here
     val_ratio = 0.2
@@ -267,29 +265,36 @@ def finetune_paraphrase_generation(args):
 
     train_data = transform_data(train_dataset)
     val_data = transform_data(val_dataset)
-    test_data = transform_data(test_dataset)
+    #test_data = transform_data(test_dataset)
 
     print(f"Loaded {len(train_dataset)} training samples.")
 
     scores_before_training = evaluate_model(model, val_data, device, tokenizer)
     bleu_score_before_training, meteor_score_before_training = scores_before_training.values()
 
-    #model = train_model(model, train_data, val_data, device, tokenizer, patience=5)
+    best_bleu = 0
+    best_lr = 0
+    for lr in [1e-5, 5e-5, 8e-5, 1e-4, 1e-3, 1e-6, 1e-7]: #Todo: optimize also val_ratio, patience, batch_size
+        model = train_model(model, train_data, val_data, device, tokenizer, learning_rate=lr,patience=3)
 
-    print("Training finished.")
+    #print("Training finished.")
 
-    scores = evaluate_model(model, val_data, device, tokenizer)
-    bleu_score, meteor_score = scores.values()
-    print(f"The penalized BLEU-score of the model is: {bleu_score:.3f}")
-    print(f"The METEOR-score of the model is: {meteor_score:.3f}")
-    print(f"Without training: \n BLEU: {bleu_score_before_training:.3f} \n METEOR: {meteor_score_before_training}")
+        scores = evaluate_model(model, val_data, device, tokenizer)
+        bleu_score, meteor_score = scores.values()
+        print(f"Results for learning rate {lr}:")
+        print(f"The penalized BLEU-score of the model is: {bleu_score:.3f}")
+        print(f"The METEOR-score of the model is: {meteor_score:.3f}")
+        print(f"Without training: \n BLEU: {bleu_score_before_training:.3f} \n METEOR: {meteor_score_before_training}")
+        if bleu_score > best_bleu:
+            best_lr = lr
+    print(f"Best LR: {best_lr}")
 
-    test_ids = test_dataset["id"]
-    test_results = test_model(test_data, test_ids, device, model, tokenizer)
-    if not DEV_MODE:
-        test_results.to_csv(
-            "predictions/bart/etpc-paraphrase-generation-test-output.csv", index=False, sep="\t"
-        )
+    #test_ids = test_dataset["id"]
+    #test_results = test_model(test_data, test_ids, device, model, tokenizer)
+    #if not DEV_MODE:
+    #    test_results.to_csv(
+    #        "predictions/bart/etpc-paraphrase-generation-test-output.csv", index=False, sep="\t"
+    #    )
 
 if __name__ == "__main__":
     args = get_args()
