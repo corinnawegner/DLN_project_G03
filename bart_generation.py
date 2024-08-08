@@ -83,7 +83,7 @@ def transform_data(dataset, batch_size,max_length=256):
 
     return dataloader
 
-def train_model(model, train_data, val_data, device, tokenizer, learning_rate = 5e-5, patience=3):
+def train_model(model, train_data, val_data, device, tokenizer, learning_rate = 5e-5, patience=3, print_messages = True):
     """
     Train the model. Return and save the best model.
     https://huggingface.co/docs/transformers/en/training#train-in-native-pytorch #Todo: Put in references
@@ -128,10 +128,12 @@ def train_model(model, train_data, val_data, device, tokenizer, learning_rate = 
 
             # Early stopping
             if epochs_without_improvement >= patience:
-                print(f"Early stopping triggered after {epoch + 1} epochs. \n")
-                print(f'Best BLEU score: {best_bleu_score} at epoch {best_epoch}. \n')
-                print(f"History: {bleu_scores}")
+                if print_messages:
+                    print(f"Early stopping triggered after {epoch + 1} epochs. \n")
+                    print(f'Best BLEU score: {best_bleu_score} at epoch {best_epoch}. \n')
+                    print(f"History: {bleu_scores}")
                 break
+
 
     return model
 
@@ -275,35 +277,44 @@ def finetune_paraphrase_generation(args):
 
     hyperparameter_grid = {
         'learning_rate': [1e-5, 5e-5, 8e-5, 1e-4, 1e-6],
-        'batch_size': [32, 64, 128],
+        'batch_size': [32, 64],  #, 128], This gives memory issues
         'dropout_rate': [0.3, 0.0]
     }
 
-    if not DEV_MODE:
-        for dropout in hyperparameter_grid['dropout_rate']:
-            config.attention_dropout = dropout
-            config.activation_dropout = dropout
-            config.dropout = dropout
-            model = BartForConditionalGeneration.from_pretrained("facebook/bart-large", config=config, local_files_only=True)
-            model.to(device)
-            for b in hyperparameter_grid['batch_size']:
-                train_data = transform_data(train_dataset, batch_size=b)
-                val_data = transform_data(val_dataset, batch_size=b)
-                for lr in hyperparameter_grid['learning_rate']:
-                    #scores_before_training = evaluate_model(model, val_data, device, tokenizer)
-                    #bleu_score_before_training, _ = scores_before_training.values()
-                    model = train_model(model, train_data, val_data, device, tokenizer, learning_rate=lr, patience=3)
-                    scores = evaluate_model(model, val_data, device, tokenizer)
-                    bleu_score, _ = scores.values()
-                    print(f"Results for learning rate {lr}, batch_size: {b}, dropout rate: {dropout}:")
-                    print(f"The penalized BLEU-score of the model is: {bleu_score:.3f}")
-                    #print(f"The METEOR-score of the model is: {meteor_score:.3f}")
-                    #print(f"Without training: \n BLEU: {bleu_score_before_training:.3f}")# \n METEOR: {meteor_score_before_training}")
-                    if bleu_score > best_bleu:
-                        best_bleu = bleu_score
-                        best_lr = lr
-                        best_batchsize = b
-                        best_dropout = dropout
+    hyperparameter_grid = {
+        'learning_rate': [1e-5, 5e-5, 8e-5, 1e-4, 1e-6],
+        'batch_size': [128, 64, 32],
+        'dropout_rate': [0.3, 0.1, 0.0]
+    }
+
+    #if not DEV_MODE:
+    for dropout in hyperparameter_grid['dropout_rate']:
+        config.attention_dropout = dropout
+        config.activation_dropout = dropout
+        config.dropout = dropout
+        model = BartForConditionalGeneration.from_pretrained("facebook/bart-large", config=config, local_files_only=True)
+        model.to(device)
+        for b in hyperparameter_grid['batch_size']:
+            train_data = transform_data(train_dataset, batch_size=b)
+            val_data = transform_data(val_dataset, batch_size=b)
+            for lr in hyperparameter_grid['learning_rate']:
+                #scores_before_training = evaluate_model(model, val_data, device, tokenizer)
+                #bleu_score_before_training, _ = scores_before_training.values()
+                model = train_model(model, train_data, val_data, device, tokenizer, learning_rate=lr, patience=3, print_messages=DEV_MODE)
+                scores = evaluate_model(model, val_data, device, tokenizer)
+                bleu_score, _ = scores.values()
+                print(f"Results for learning rate {lr}, batch_size: {b}, dropout rate: {dropout}:")
+                print(f"The penalized BLEU-score of the model is: {bleu_score:.3f}")
+                #print(f"The METEOR-score of the model is: {meteor_score:.3f}")
+                #print(f"Without training: \n BLEU: {bleu_score_before_training:.3f}")# \n METEOR: {meteor_score_before_training}")
+                if bleu_score > best_bleu:
+                    best_bleu = bleu_score
+                    best_lr = lr
+                    best_batchsize = b
+                    best_dropout = dropout
+            # Clear GPU memory
+            del model
+            torch.cuda.empty_cache()
     print(f"Best params: \n LR: {best_lr} \n batch size: {best_batchsize} \n dropout: {best_dropout}")
 
     #test_ids = test_dataset["id"]
