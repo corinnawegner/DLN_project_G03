@@ -267,13 +267,13 @@ def train_multitask(args):
             qqp_train_data, 
             shuffle=True,
             batch_size=args.batch_size,
-            collate_fn=quora_train_data.collate_fn,
+            collate_fn=qqp_train_data.collate_fn,
         )
         quora_dev_dataloader = DataLoader(
             qqp_dev_data,
             shuffle=True,
             batch_size=args.batch_size,
-            collate_fn=quora_dev_data.collate_fn,
+            collate_fn=qqp_dev_data.collate_fn,
         )
     if args.task == "etpc" or args.task == "multitask":
         etpc_train_data = SentencePairDataset(
