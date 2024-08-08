@@ -246,21 +246,18 @@ def finetune_paraphrase_generation(args):
     train_dataset = train_dataset if not DEV_MODE else train_dataset[:10]
     train_dataset_shuffled = train_dataset.sample(frac=1, random_state=42).reset_index(drop=True)
 
-    test_dataset = pd.read_csv("data/etpc-paraphrase-generation-test-student.csv", sep="\t")#[:10]
-    test_dataset = test_dataset if not DEV_MODE else test_dataset[:10]
+    #test_dataset = pd.read_csv("data/etpc-paraphrase-generation-test-student.csv", sep="\t")#[:10]
+    #test_dataset = test_dataset if not DEV_MODE else test_dataset[:10]
 
-    # You might do a split of the train data into train/validation set here
-    val_ratio = 0.2
-    split_index = int(len(train_dataset_shuffled) * val_ratio)
+    val_dataset = train_dataset_shuffled.sample(frac=0.2, random_state=42)
+    train_dataset = train_dataset_shuffled.drop(val_dataset.index)
 
-    train_dataset = train_dataset_shuffled.iloc[split_index:]
-    val_dataset = train_dataset_shuffled.iloc[:split_index]
     if DEV_MODE: #Trying to check if early stopping works
         val_dataset = pd.read_csv("data/etpc-paraphrase-train.csv", sep="\t")[:15]
 
     train_data = transform_data(train_dataset)
     val_data = transform_data(val_dataset)
-    test_data = transform_data(test_dataset)
+    #test_data = transform_data(test_dataset)
 
     print(f"Loaded {len(train_dataset)} training samples.")
 

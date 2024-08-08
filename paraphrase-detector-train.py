@@ -49,10 +49,8 @@ def check_paraphrase(model_path, sentence1, sentence2):
 
 # Reinforcement Learning fine-tuning step
 def fine_tune_generator(model, evaluator_model_path, train_data, device, tokenizer, num_epochs=3):
-    optimizer = AdamW(model.parameters(), lr=5e-6)
+    optimizer = AdamW(model.parameters(), lr=5e-6) #Todo: change lr to an optimal one
     evaluator_tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
-
-    import torch
 
     if torch.cuda.is_available():
         evaluator = multitask_classifier.MultitaskBERT(torch.load(evaluator_model_path)["model_config"])
@@ -89,16 +87,17 @@ def main():
     tokenizer = AutoTokenizer.from_pretrained("facebook/bart-large")
     train_dataset = pd.read_csv("data/etpc-paraphrase-train.csv", sep="\t") if not DEV_MODE else pd.read_csv("data/etpc-paraphrase-train.csv", sep="\t")[:10]
     val_dataset = train_dataset.sample(frac=0.2, random_state=42)
+    train_dataset = train_dataset.drop(val_dataset.index)
     train_data = bart_generation.transform_data(train_dataset)
     val_data = bart_generation.transform_data(val_dataset)
     evaluator_model_path = "models/finetune-10-1e-05-qqp.pt"
     if TRAINING:
         print('Training generator. \n')
-        bart_generation.train_model(model, train_data, val_data, device, tokenizer)
+        bart_generation.train_model(model, train_data, val_data, device, tokenizer) #Todo: adapt optimal hyperparameters
     score_before_finetune = bart_generation.evaluate_model(model, val_data, device, tokenizer)
     print(f'Score before fine-tuning with evaluator: {score_before_finetune} \n')
     print('Training generator with feedback from evaluator. \n')
-    fine_tune_generator(model, evaluator_model_path, train_data, device, tokenizer, num_epochs=3)
+    fine_tune_generator(model, evaluator_model_path, train_data, device, tokenizer, num_epochs=5)
     score_after_finetune = bart_generation.evaluate_model(model, val_data, device, tokenizer)
     print(f'Score after fine-tuning with evaluator: {score_after_finetune} \n')
 

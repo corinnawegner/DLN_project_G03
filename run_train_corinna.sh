@@ -32,6 +32,6 @@ echo "Latest Commit: $(git rev-parse --short HEAD)"
 echo -e "Uncommitted Changes: $(git status --porcelain | wc -l)\n"
 
 # Run the script:
-srun python multitask_classifier.py --use_gpu --option finetune --task qqp
+#srun python multitask_classifier.py --use_gpu --option finetune --task qqp
 srun python -u paraphrase-detector-train.py --use_gpu
 
