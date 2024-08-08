@@ -283,7 +283,7 @@ def finetune_paraphrase_generation(args):
 
     hyperparameter_grid = {
         'learning_rate': [1e-5, 5e-5, 8e-5, 1e-4, 1e-6],
-        'batch_size': [128, 64, 32],
+        'batch_size': [64, 32],
         'dropout_rate': [0.3, 0.1, 0.0]
     }
 
