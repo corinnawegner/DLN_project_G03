@@ -37,6 +37,7 @@ def predict_paraphrase(self, sentence1, sentence2, tokenizer, device):
         return probability
 
 def check_paraphrase(model_path, sentence1, sentence2):
+    tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Load the trained model
@@ -46,8 +47,6 @@ def check_paraphrase(model_path, sentence1, sentence2):
     model = multitask_classifier.MultitaskBERT(config)
     model.load_state_dict(saved["model"])
     model = model.to(device)
-
-    tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
 
     probability = predict_paraphrase(model, sentence1, sentence2, tokenizer, device)
 
