@@ -23,7 +23,6 @@ except:
 DEV_MODE = False
 if local_hostname == 'Corinna-PC' or local_hostname == "TABLET-TTS0K9R0": #Todo: Add also laptop
     DEV_MODE = True
-DEV_MODE = False
 
 TQDM_DISABLE = not DEV_MODE
 
@@ -276,30 +275,35 @@ def finetune_paraphrase_generation(args):
 
     hyperparameter_grid = {
         'learning_rate': [1e-5, 5e-5, 8e-5, 1e-4, 1e-6],
-        'batch_size': [32, 64],  #, 128], This gives memory issues
+        'batch_size': [64, 32],  #, 128], This gives memory issues
         'dropout_rate': [0.3, 0.0]
     }
 
-    hyperparameter_grid = {
-        'learning_rate': [1e-5],# 5e-5, 8e-5, 1e-4, 1e-6],
-        'batch_size': [64],
-        'dropout_rate': [0.0]#, 0.1, 0.0]
-    }
+ #   hyperparameter_grid = {
+  #      'learning_rate': [1e-5],# 5e-5, 8e-5, 1e-4, 1e-6],
+   #     'batch_size': [64],
+    #    'dropout_rate': [0.0]#, 0.1, 0.0]
+    #}
 
     #if not DEV_MODE:
     for dropout in hyperparameter_grid['dropout_rate']:
-        if dropout > 0:
-            config = BartConfig.from_pretrained("facebook/bart-large")
-            config.attention_dropout = dropout
-            config.activation_dropout = dropout
-            config.dropout = dropout
         for b in hyperparameter_grid['batch_size']:
-            model = BartForConditionalGeneration.from_pretrained("facebook/bart-large", config=config,
-                                                                 local_files_only=True)
-            model.to(device)
-            train_data = transform_data(train_dataset, batch_size=b)
-            val_data = transform_data(val_dataset, batch_size=b)
             for lr in hyperparameter_grid['learning_rate']:
+                if dropout > 0 and b > 32:
+                    continue
+                if dropout > 0:
+                    config = BartConfig.from_pretrained("facebook/bart-large") #todo: if fail next time, maybe exclude dropout and batch size 64
+                    config.attention_dropout = dropout
+                    config.activation_dropout = dropout
+                    config.dropout = dropout
+                    model = BartForConditionalGeneration.from_pretrained("facebook/bart-large", config=config,
+                                                                         local_files_only=True)
+                else:
+                    model = BartForConditionalGeneration.from_pretrained("facebook/bart-large",
+                                                                         local_files_only=True)
+                model.to(device)
+                train_data = transform_data(train_dataset, batch_size=b)
+                val_data = transform_data(val_dataset, batch_size= b)
                 #scores_before_training = evaluate_model(model, val_data, device, tokenizer)
                 #bleu_score_before_training, _ = scores_before_training.values()
                 model = train_model(model, train_data, val_data, device, tokenizer, learning_rate=lr, patience=3, print_messages=DEV_MODE)
@@ -314,9 +318,9 @@ def finetune_paraphrase_generation(args):
                     best_lr = lr
                     best_batchsize = b
                     best_dropout = dropout
-            # Clear GPU memory
-            del model
-            torch.cuda.empty_cache()
+                # Clear GPU memory
+                del model
+                torch.cuda.empty_cache() #Todo: will it also delete the best parameters?
     print(f"Best params: \n LR: {best_lr} \n batch size: {best_batchsize} \n dropout: {best_dropout}")
 
     #test_ids = test_dataset["id"]
