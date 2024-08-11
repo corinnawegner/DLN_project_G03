@@ -9,6 +9,7 @@ from torch.utils.data import DataLoader, TensorDataset
 from tqdm import tqdm
 from transformers import AutoTokenizer, BartForConditionalGeneration, BartConfig
 from optimizer import AdamW
+from torch.cuda.amp import autocast, GradScaler
 
 import warnings
 import socket
@@ -30,7 +31,7 @@ TQDM_DISABLE = not DEV_MODE
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 
-def transform_data(dataset, batch_size,max_length=256):
+def transform_data(dataset, max_length=256):
     """
     Turn the data to the format you want to use.
     Use AutoTokenizer to obtain encoding (input_ids and attention_mask).
@@ -79,23 +80,23 @@ def transform_data(dataset, batch_size,max_length=256):
     labels = torch.stack(labels)
 
     dataset = TensorDataset(input_ids, attention_masks, labels)
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False) #Todo: Shuffle train dataset? I think I do this when loading the dataset
+    dataloader = DataLoader(dataset, batch_size=32, shuffle=False) #Todo: Shuffle train dataset? I think I do this when loading the dataset
 
     return dataloader
 
-def train_model(model, train_data, val_data, device, tokenizer, learning_rate = 5e-5, patience=3, print_messages = True):
-    """
-    Train the model. Return and save the best model.
-    https://huggingface.co/docs/transformers/en/training#train-in-native-pytorch #Todo: Put in references
-    """
+
+def train_model(model, train_data, val_data, device, tokenizer, learning_rate=5e-5, batch_size=64, patience=3, print_messages=True,
+                ):
+    accumulation_steps = int(batch_size/32)
     if not DEV_MODE:
         torch.cuda.empty_cache()
 
-    num_epochs = 30 if not DEV_MODE else 10
-    num_training_steps = num_epochs * len(train_data)
-    progress_bar = tqdm(range(num_training_steps), tqdm_disable= not DEV_MODE)
+    num_epochs = 100 if not DEV_MODE else 10
+    num_training_steps = num_epochs * len(train_data) // accumulation_steps
+    progress_bar = tqdm(range(num_training_steps), disable=TQDM_DISABLE)
 
     optimizer = AdamW(model.parameters(), lr=learning_rate)
+    scaler = GradScaler()
 
     bleu_scores = []
     best_bleu_score = -10
@@ -104,21 +105,26 @@ def train_model(model, train_data, val_data, device, tokenizer, learning_rate = 
 
     model.train()
     for epoch in range(num_epochs):
-        for batch in train_data:
-            input_ids, attention_mask, labels = [tensor.to(device) for tensor in batch]
-            outputs = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
-            loss = outputs.loss
-            loss.backward()
-            optimizer.step()
-            optimizer.zero_grad()
-            progress_bar.update(1)
+        optimizer.zero_grad()
+        for i, batch in enumerate(train_data):
+            input_ids, attention_mask, labels = [tensor.to(device, non_blocking=True) for tensor in batch]
+            with autocast():
+                outputs = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
+                loss = outputs.loss / accumulation_steps
+
+            scaler.scale(loss).backward()
+
+            if (i + 1) % accumulation_steps == 0:
+                scaler.step(optimizer)
+                scaler.update()
+                optimizer.zero_grad()
+                progress_bar.update(1)
 
         if val_data is not None:
             scores = evaluate_model(model, val_data, device, tokenizer, print_messages=print_messages)
             b = scores['bleu_score']
             bleu_scores.append(b)
 
-            # Save the best model
             if b > best_bleu_score:
                 best_bleu_score = scores['bleu_score']
                 best_epoch = epoch + 1
@@ -126,7 +132,6 @@ def train_model(model, train_data, val_data, device, tokenizer, learning_rate = 
             else:
                 epochs_without_improvement += 1
 
-            # Early stopping
             if epochs_without_improvement >= patience:
                 if print_messages:
                     print(f"Early stopping triggered after {epoch + 1} epochs. \n")
@@ -134,8 +139,8 @@ def train_model(model, train_data, val_data, device, tokenizer, learning_rate = 
                     print(f"History: {bleu_scores}")
                 break
 
-
     return model
+
 
 def test_model(test_data, test_ids, device, model, tokenizer):
     model.eval()
@@ -254,17 +259,11 @@ def finetune_paraphrase_generation(args):
     val_dataset = train_dataset_shuffled.sample(frac=0.2, random_state=42)
     train_dataset = train_dataset_shuffled.drop(val_dataset.index)
 
+    train_data = transform_data(train_dataset)
+    val_data = transform_data(val_dataset)
+
     #test_dataset = pd.read_csv("data/etpc-paraphrase-generation-test-student.csv", sep="\t")#[:10]
     #test_dataset = test_dataset if not DEV_MODE else test_dataset[:10] #todo: put back
-
-    # You might do a split of the train data into train/validation set here
-    #val_ratio = 0.2 #todo: This is done later in one line
-    #split_index = int(len(train_dataset_shuffled) * val_ratio)
-
-    #train_dataset = train_dataset_shuffled.iloc[split_index:]
-    #val_dataset = train_dataset_shuffled.iloc[:split_index]
-    #if DEV_MODE: #Trying to check if early stopping works
-     #   val_dataset = pd.read_csv("data/etpc-paraphrase-train.csv", sep="\t")[:15]
 
     print(f"Loaded {len(train_dataset)} training samples.")
 
@@ -285,7 +284,6 @@ def finetune_paraphrase_generation(args):
     #    'dropout_rate': [0.0]#, 0.1, 0.0]
     #}
 
-    #if not DEV_MODE:
     for b in hyperparameter_grid['batch_size']:
         for dropout in hyperparameter_grid['dropout_rate']:
             for lr in hyperparameter_grid['learning_rate']:
@@ -302,11 +300,9 @@ def finetune_paraphrase_generation(args):
                     model = BartForConditionalGeneration.from_pretrained("facebook/bart-large",
                                                                          local_files_only=True)
                 model.to(device)
-                train_data = transform_data(train_dataset, batch_size=b)
-                val_data = transform_data(val_dataset, batch_size= b)
                 #scores_before_training = evaluate_model(model, val_data, device, tokenizer)
                 #bleu_score_before_training, _ = scores_before_training.values()
-                model = train_model(model, train_data, val_data, device, tokenizer, learning_rate=lr, patience=3, print_messages=DEV_MODE)
+                model = train_model(model, train_data, val_data, device, tokenizer, learning_rate=lr, batch_size=b ,patience=3, print_messages=DEV_MODE)
                 scores = evaluate_model(model, val_data, device, tokenizer)
                 bleu_score, _ = scores.values()
                 print(f"Results for learning rate {lr}, batch_size: {b}, dropout rate: {dropout}:")
