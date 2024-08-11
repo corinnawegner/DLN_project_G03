@@ -16,8 +16,6 @@ except Exception:
 
 DEV_MODE = local_hostname in ['Corinna-PC', "TABLET-TTS0K9R0"]  # Add any other hostname if needed
 TQDM_DISABLE = not DEV_MODE
-TRAINING = not DEV_MODE
-DEV_MODE = False
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 
@@ -52,7 +50,7 @@ def load_evaluator(path, device):
 
 # Fine-tuning step with reinforcement learning
 def fine_tune_generator(model, evaluator, evaluator_tokenizer, train_data, device, tokenizer, num_epochs=3):
-    optimizer = AdamW(model.parameters(), lr=5e-6)
+    optimizer = AdamW(model.parameters(), lr=1e-8)
 
     model.train()
     for epoch in tqdm(range(num_epochs), disable=TQDM_DISABLE):
@@ -115,7 +113,7 @@ def main():
     val_data = bart_generation.transform_data(val_dataset)
 
     print('Training generator.\n')
-    model = bart_generation.train_model(model, train_data, val_data, device, tokenizer)
+    #model = bart_generation.train_model(model, train_data, val_data, device, tokenizer)
     print('Finished training generator.')
 
     score_before_finetune = bart_generation.evaluate_model(model, val_data, device, tokenizer)
