@@ -93,7 +93,7 @@ def train_model(model, train_data, val_data, device, tokenizer, learning_rate = 
 
     num_epochs = 30 if not DEV_MODE else 10
     num_training_steps = num_epochs * len(train_data)
-    progress_bar = tqdm(range(num_training_steps))
+    progress_bar = tqdm(range(num_training_steps), tqdm_disable= not DEV_MODE)
 
     optimizer = AdamW(model.parameters(), lr=learning_rate)
 
@@ -114,7 +114,7 @@ def train_model(model, train_data, val_data, device, tokenizer, learning_rate = 
             progress_bar.update(1)
 
         if val_data is not None:
-            scores = evaluate_model(model, val_data, device, tokenizer)
+            scores = evaluate_model(model, val_data, device, tokenizer, print_messages=print_messages)
             b = scores['bleu_score']
             bleu_scores.append(b)
 
@@ -171,7 +171,7 @@ def test_model(test_data, test_ids, device, model, tokenizer):
     return results
 
 
-def evaluate_model(model, dataloader, device, tokenizer):
+def evaluate_model(model, dataloader, device, tokenizer, print_messages=True):
     """
     You can use your train/validation set to evaluate models performance with the BLEU score.
     test_data is a DataLoader, where the column "sentence1" contains all input sentence and
@@ -214,13 +214,13 @@ def evaluate_model(model, dataloader, device, tokenizer):
     bleu_score_reference = bleu.corpus_score(references, [predictions]).score
     # Penalize BLEU score if its to close to the input
     bleu_score_inputs = 100 - bleu.corpus_score(inputs, [predictions]).score
-
-    print(f"BLEU Score: {bleu_score_reference}", f"Negative BLEU Score with input: {bleu_score_inputs}")
-
-    # Penalize BLEU and rescale it to 0-100
-    # todo: If you perfectly predict all the targets, you should get an penalized BLEU score of around 52
     penalized_bleu = bleu_score_reference * bleu_score_inputs / 52
-    print(f"Penalized BLEU Score: {penalized_bleu}")
+    if print_messages:
+        print(f"BLEU Score: {bleu_score_reference}", f"Negative BLEU Score with input: {bleu_score_inputs}")
+
+        # Penalize BLEU and rescale it to 0-100
+        # todo: If you perfectly predict all the targets, you should get an penalized BLEU score of around 52
+        print(f"Penalized BLEU Score: {penalized_bleu}")
 
     #meteor_score = single_meteor_score(references, predictions)
 
@@ -286,11 +286,11 @@ def finetune_paraphrase_generation(args):
     #}
 
     #if not DEV_MODE:
-    for dropout in hyperparameter_grid['dropout_rate']:
-        for b in hyperparameter_grid['batch_size']:
+    for b in hyperparameter_grid['batch_size']:
+        for dropout in hyperparameter_grid['dropout_rate']:
             for lr in hyperparameter_grid['learning_rate']:
-                if dropout > 0 and b > 32:
-                    continue
+                #if dropout > 0 and b > 32:
+                 #   continue
                 if dropout > 0:
                     config = BartConfig.from_pretrained("facebook/bart-large") #todo: if fail next time, maybe exclude dropout and batch size 64
                     config.attention_dropout = dropout
