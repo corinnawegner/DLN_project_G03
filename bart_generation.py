@@ -24,7 +24,7 @@ if local_hostname == 'Corinna-PC' or local_hostname == "TABLET-TTS0K9R0": #Todo:
 TQDM_DISABLE = not DEV_MODE
 TRAINING = not DEV_MODE
 
-batch_size = 64 if not DEV_MODE else 1
+batch_size = 32 if not DEV_MODE else 1 #Todo: Set to best value
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 
