@@ -10,6 +10,7 @@ from tqdm import tqdm
 from transformers import AutoTokenizer, BartForConditionalGeneration, BartConfig
 from optimizer import AdamW
 from torch.cuda.amp import autocast, GradScaler
+from penalty_function import ngram_penalty, length_penalty
 
 import warnings
 import socket
@@ -26,8 +27,6 @@ if local_hostname == 'Corinna-PC' or local_hostname == "TABLET-TTS0K9R0": #Todo:
     DEV_MODE = True
 
 TQDM_DISABLE = not DEV_MODE
-
-#batch_size = 64 if not DEV_MODE else 1
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 
@@ -85,9 +84,8 @@ def transform_data(dataset, max_length=256):
     return dataloader
 
 
-def train_model(model, train_data, val_data, device, tokenizer, learning_rate=5e-5, batch_size=64, patience=3, print_messages=True,
-                ):
-    accumulation_steps = int(batch_size/32)
+def train_model(model, train_data, val_data, device, tokenizer, learning_rate=5e-5, batch_size=64, patience=3, print_messages=True, alpha=1e-2):
+    accumulation_steps = int(batch_size / 32)
     if not DEV_MODE:
         torch.cuda.empty_cache()
 
@@ -111,6 +109,20 @@ def train_model(model, train_data, val_data, device, tokenizer, learning_rate=5e
             with autocast():
                 outputs = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
                 loss = outputs.loss / accumulation_steps
+
+                # Compute the n-gram penalty
+                with torch.no_grad():
+                    predictions = model.generate(
+                        input_ids,
+                        attention_mask=attention_mask,
+                        max_length=50,
+                        num_beams=5,
+                        early_stopping=True,
+                    )
+                    penalty = ngram_penalty(predictions) + length_penalty(predictions)
+
+                # Add penalty to loss
+                loss = loss + alpha*penalty
 
             scaler.scale(loss).backward()
 
@@ -140,6 +152,7 @@ def train_model(model, train_data, val_data, device, tokenizer, learning_rate=5e
                 break
 
     return model
+
 
 
 def test_model(test_data, test_ids, device, model, tokenizer):
@@ -274,15 +287,15 @@ def finetune_paraphrase_generation(args):
 
     hyperparameter_grid = {
         'learning_rate': [1e-5, 5e-5, 8e-5, 1e-4, 1e-6],
-        'batch_size': [64, 32],  #, 128], This gives memory issues
-        'dropout_rate': [0.3, 0.0]
+        'batch_size': [128, 64, 32],  #, 128], This gives memory issues
+        'dropout_rate': [0.3, 0.0] #todo: add alpha from penalty function
     }
 
- #   hyperparameter_grid = {
-  #      'learning_rate': [1e-5],# 5e-5, 8e-5, 1e-4, 1e-6],
-   #     'batch_size': [64],
-    #    'dropout_rate': [0.0]#, 0.1, 0.0]
-    #}
+    hyperparameter_grid = {
+        'learning_rate': [1e-5],# 5e-5, 8e-5, 1e-4, 1e-6],
+        'batch_size': [64],
+        'dropout_rate': [0.0]#, 0.1, 0.0]
+    }
 
     for b in hyperparameter_grid['batch_size']:
         for dropout in hyperparameter_grid['dropout_rate']:
@@ -290,7 +303,7 @@ def finetune_paraphrase_generation(args):
                 #if dropout > 0 and b > 32:
                  #   continue
                 if dropout > 0:
-                    config = BartConfig.from_pretrained("facebook/bart-large") #todo: if fail next time, maybe exclude dropout and batch size 64
+                    config = BartConfig.from_pretrained("facebook/bart-large")
                     config.attention_dropout = dropout
                     config.activation_dropout = dropout
                     config.dropout = dropout
@@ -300,8 +313,9 @@ def finetune_paraphrase_generation(args):
                     model = BartForConditionalGeneration.from_pretrained("facebook/bart-large",
                                                                          local_files_only=True)
                 model.to(device)
-                #scores_before_training = evaluate_model(model, val_data, device, tokenizer)
-                #bleu_score_before_training, _ = scores_before_training.values()
+                if DEV_MODE:
+                    scores_before_training = evaluate_model(model, val_data, device, tokenizer)
+                    bleu_score_before_training, _ = scores_before_training.values()
                 model = train_model(model, train_data, val_data, device, tokenizer, learning_rate=lr, batch_size=b ,patience=3, print_messages=DEV_MODE)
                 scores = evaluate_model(model, val_data, device, tokenizer)
                 bleu_score, _ = scores.values()
