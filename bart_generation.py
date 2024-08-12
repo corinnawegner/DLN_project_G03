@@ -8,7 +8,7 @@ from sacrebleu.metrics import BLEU
 from torch.utils.data import DataLoader, TensorDataset
 from tqdm import tqdm
 from transformers import AutoTokenizer, BartForConditionalGeneration, BartConfig
-from optimizer import AdamW, EAdam
+from optimizer import AdamW
 from torch.cuda.amp import autocast, GradScaler
 from penalty_function import ngram_penalty, diversity_penalty#, length_penalty
 import time
@@ -36,14 +36,12 @@ r = random.randint(10000, 99999)
 model_save_path = f"models/bart_generation_earlystopping_{r}.pt"
 
 hyperparams = {
-    'optimizer': [AdamW, EAdam],
+    'optimizer': AdamW,
     'learning_rate': [1e-5, 5e-5, 8e-5, 1e-4, 1e-6],
     'batch_size': [128, 64, 32],
     'dropout_rate': [0.3, 0.0],
     'patience': 3,
     'num_epochs': 100 if not DEV_MODE else 10,
-    'accumulation_steps_base': 32,
-    'max_length': 256,
     'alpha': 1e-2,
 }  # Todo: make every function take values from here
 
@@ -150,7 +148,7 @@ def train_model(model, train_data, val_data, device, tokenizer, learning_rate=hy
                         predictions)
 
                 # Add penalty to loss
-                loss = loss + penalty
+                loss = loss + penalty if penalty else loss
 
             scaler.scale(loss).backward()
 
@@ -372,22 +370,23 @@ def finetune_paraphrase_generation(args):
     hyperparameter_grid = {
         'learning_rate': [1e-5, 5e-5, 8e-5, 1e-4, 1e-6],
         'batch_size': [128, 64, 32],  #, 128], This gives memory issues
-        'dropout_rate': [0.3,0.1,0.0],
+        'dropout_rate': [0.3, 0.1, 0.0]
         #'activation_function': ['gelu', 'relu']
-        'alpha': [],#todo: add alpha from penalty function
+
     }
 
-    hyperparameter_grid = {
-        'learning_rate': [1e-5],# 5e-5, 8e-5, 1e-4, 1e-6],
-        'batch_size': [64],
-        'dropout_rate': [0.0]#, 0.1, 0.0]
-    }
+#    hyperparameter_grid = {
+ #       'learning_rate': [1e-5],# 5e-5, 8e-5, 1e-4, 1e-6],
+  #      'batch_size': [64],
+   #     'dropout_rate': [0.0]#, 0.1, 0.0]
+    #}
 
     for b in hyperparameter_grid['batch_size']:
         for dropout in hyperparameter_grid['dropout_rate']:
             for lr in hyperparameter_grid['learning_rate']:
                 config = BartConfig.from_pretrained("facebook/bart-large")
-                #config.activation_function =
+                config.activation_dropout = dropout
+                config.attention_dropout = dropout
                 config.dropout = dropout
                 model = BartForConditionalGeneration.from_pretrained("facebook/bart-large", config=config,
                                                                      local_files_only=True)
