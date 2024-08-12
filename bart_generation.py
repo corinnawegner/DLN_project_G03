@@ -8,12 +8,13 @@ from sacrebleu.metrics import BLEU
 from torch.utils.data import DataLoader, TensorDataset
 from tqdm import tqdm
 from transformers import AutoTokenizer, BartForConditionalGeneration, BartConfig
-from optimizer import AdamW
+from optimizer import AdamW, EAdam
 from torch.cuda.amp import autocast, GradScaler
-from penalty_function import ngram_penalty, length_penalty
-
+from penalty_function import ngram_penalty, diversity_penalty#, length_penalty
+import time
 import warnings
 import socket
+import os
 #import nltk
 #nltk.download('wordnet')
 
@@ -28,7 +29,20 @@ if local_hostname == 'Corinna-PC' or local_hostname == "TABLET-TTS0K9R0": #Todo:
 
 TQDM_DISABLE = not DEV_MODE
 
+
 warnings.filterwarnings("ignore", category=FutureWarning)
+
+hyperparams = {
+    'optimizer': [AdamW, EAdam],
+    'learning_rate': [1e-5, 5e-5, 8e-5, 1e-4, 1e-6],
+    'batch_size': [128, 64, 32],
+    'dropout_rate': [0.3, 0.0],
+    'patience': 3,
+    'num_epochs': 100 if not DEV_MODE else 10,
+    'accumulation_steps_base': 32,
+    'max_length': 256,
+    'alpha': 1e-2,
+}  # Todo: make every function take values from here
 
 def transform_data(dataset, max_length=256):
     """
@@ -84,7 +98,9 @@ def transform_data(dataset, max_length=256):
     return dataloader
 
 
-def train_model(model, train_data, val_data, device, tokenizer, learning_rate=5e-5, batch_size=64, patience=3, print_messages=True, alpha=1e-2):
+
+def train_model(model, train_data, val_data, device, tokenizer, learning_rate=hyperparams['learning_rate'], batch_size=hyperparams['batch_size'],
+                patience=hyperparams['patience'], print_messages=DEV_MODE, alpha_ngram=1e-2, alpha_diversity=1e-2):
     accumulation_steps = int(batch_size / 32)
     if not DEV_MODE:
         torch.cuda.empty_cache()
@@ -93,16 +109,23 @@ def train_model(model, train_data, val_data, device, tokenizer, learning_rate=5e
     num_training_steps = num_epochs * len(train_data) // accumulation_steps
     progress_bar = tqdm(range(num_training_steps), disable=TQDM_DISABLE)
 
-    optimizer = AdamW(model.parameters(), lr=learning_rate)
+    optimizer = EAdam(model.parameters(), lr=learning_rate)
+    #optimizer = hyperparams['optimizer'] #Todo: After hyperparameter search, use this
     scaler = GradScaler()
 
     bleu_scores = []
     best_bleu_score = -10
-    epochs_without_improvement = 0
     best_epoch = 0
+    epochs_without_improvement = 0
+    model_save_path = f"models/bart_generation_earlystopping.pt"
+
+    # Start timing
+    total_start_time = time.time()
 
     model.train()
     for epoch in range(num_epochs):
+        epoch_start_time = time.time()  # Start time for this epoch
+
         optimizer.zero_grad()
         for i, batch in enumerate(train_data):
             input_ids, attention_mask, labels = [tensor.to(device, non_blocking=True) for tensor in batch]
@@ -119,10 +142,11 @@ def train_model(model, train_data, val_data, device, tokenizer, learning_rate=5e
                         num_beams=5,
                         early_stopping=True,
                     )
-                    penalty = ngram_penalty(predictions) + length_penalty(predictions)
+                    penalty = alpha_ngram * ngram_penalty(predictions) + alpha_diversity * diversity_penalty(
+                        predictions)
 
                 # Add penalty to loss
-                loss = loss + alpha*penalty
+                loss = loss + penalty
 
             scaler.scale(loss).backward()
 
@@ -131,6 +155,12 @@ def train_model(model, train_data, val_data, device, tokenizer, learning_rate=5e
                 scaler.update()
                 optimizer.zero_grad()
                 progress_bar.update(1)
+
+        # End time for this epoch
+        epoch_end_time = time.time()
+        epoch_duration = epoch_end_time - epoch_start_time
+        if print_messages:
+            print(f"Epoch {epoch + 1}/{num_epochs} completed in {epoch_duration:.2f} seconds.")
 
         if val_data is not None:
             scores = evaluate_model(model, val_data, device, tokenizer, print_messages=print_messages)
@@ -141,6 +171,10 @@ def train_model(model, train_data, val_data, device, tokenizer, learning_rate=5e
                 best_bleu_score = scores['bleu_score']
                 best_epoch = epoch + 1
                 epochs_without_improvement = 0
+                # Save the best model
+                torch.save(model.state_dict(), model_save_path)
+                if print_messages:
+                    print(f"Best model saved at epoch {epoch + 1} with BLEU score: {best_bleu_score:.3f}")
             else:
                 epochs_without_improvement += 1
 
@@ -151,8 +185,19 @@ def train_model(model, train_data, val_data, device, tokenizer, learning_rate=5e
                     print(f"History: {bleu_scores}")
                 break
 
-    return model
+    # End total timing
+    total_end_time = time.time()
+    total_training_time = total_end_time - total_start_time
+    if print_messages:
+        print(f"Total training time: {total_training_time:.2f} seconds.")
 
+    # Load the best model before returning
+    if os.path.exists(model_save_path):
+        model.load_state_dict(torch.load(model_save_path))
+        if print_messages:
+            print(f"Best model reloaded from {model_save_path}.")
+
+    return model
 
 
 def test_model(test_data, test_ids, device, model, tokenizer):
@@ -188,6 +233,42 @@ def test_model(test_data, test_ids, device, model, tokenizer):
 
     return results
 
+def generate_paraphrases(model, dataloader, device, tokenizer):
+    model.eval()
+    predictions = []
+    references = []
+    inputs = []
+    with torch.no_grad():
+        for batch in dataloader:
+            input_ids, attention_mask, labels = [tensor.to(device) for tensor in batch]
+
+            # Generate paraphrases
+            outputs = model.generate(
+                input_ids,
+                attention_mask=attention_mask,
+                max_length=50,
+                num_beams=5,
+                early_stopping=True,
+            )
+
+            pred_text = [
+                tokenizer.decode(g, skip_special_tokens=True, clean_up_tokenization_spaces=True)
+                for g in outputs
+            ]
+            references.extend([
+                tokenizer.decode(label, skip_special_tokens=True, clean_up_tokenization_spaces=True)
+                for label in labels
+            ])
+            inputs.extend([
+                tokenizer.decode(input_id, skip_special_tokens=True, clean_up_tokenization_spaces=True)
+                for input_id in input_ids
+            ])
+            predictions.extend(pred_text)
+            paraphrases = pd.DataFrame({
+                'references': references,
+                'predictions': predictions
+            })
+            return paraphrases
 
 def evaluate_model(model, dataloader, device, tokenizer, print_messages=True):
     """
@@ -242,7 +323,7 @@ def evaluate_model(model, dataloader, device, tokenizer, print_messages=True):
 
     #meteor_score = single_meteor_score(references, predictions)
 
-    return {"bleu_score": penalized_bleu, "meteor_score": "meteor_score not computed"}
+    return {"bleu_score": penalized_bleu, "meteor_score": "meteor_score not computed"} #todo: put back meteor if want to use
 
 def seed_everything(seed=11711):
     random.seed(seed)
@@ -276,7 +357,7 @@ def finetune_paraphrase_generation(args):
     val_data = transform_data(val_dataset)
 
     #test_dataset = pd.read_csv("data/etpc-paraphrase-generation-test-student.csv", sep="\t")#[:10]
-    #test_dataset = test_dataset if not DEV_MODE else test_dataset[:10] #todo: put back
+    #test_dataset = test_dataset if not DEV_MODE else test_dataset[:10] #todo: put back at the end
 
     print(f"Loaded {len(train_dataset)} training samples.")
 
@@ -288,12 +369,13 @@ def finetune_paraphrase_generation(args):
     hyperparameter_grid = {
         'learning_rate': [1e-5, 5e-5, 8e-5, 1e-4, 1e-6],
         'batch_size': [128, 64, 32],  #, 128], This gives memory issues
-        'dropout_rate': [0.3, 0.0] #todo: add alpha from penalty function
+        'dropout_rate': [0.3, 0.0],
+        'alpha': [],#todo: add alpha from penalty function
     }
 
     hyperparameter_grid = {
         'learning_rate': [1e-5],# 5e-5, 8e-5, 1e-4, 1e-6],
-        'batch_size': [64],
+        'batch_size': [128],
         'dropout_rate': [0.0]#, 0.1, 0.0]
     }
 
@@ -316,11 +398,12 @@ def finetune_paraphrase_generation(args):
                 if DEV_MODE:
                     scores_before_training = evaluate_model(model, val_data, device, tokenizer)
                     bleu_score_before_training, _ = scores_before_training.values()
-                model = train_model(model, train_data, val_data, device, tokenizer, learning_rate=lr, batch_size=b ,patience=3, print_messages=DEV_MODE)
+                model = train_model(model, train_data, val_data, device, tokenizer, learning_rate=lr, batch_size=b, patience=hyperparams['patience'], print_messages=True, alpha_ngram=0.0, alpha_diversity=0.0) #todo: set print_messages to DEV_MODE again
                 scores = evaluate_model(model, val_data, device, tokenizer)
                 bleu_score, _ = scores.values()
                 print(f"Results for learning rate {lr}, batch_size: {b}, dropout rate: {dropout}:")
                 print(f"The penalized BLEU-score of the model is: {bleu_score:.3f}")
+                print("\n")
                 #print(f"The METEOR-score of the model is: {meteor_score:.3f}")
                 #print(f"Without training: \n BLEU: {bleu_score_before_training:.3f}")# \n METEOR: {meteor_score_before_training}")
                 if bleu_score > best_bleu:
@@ -329,9 +412,13 @@ def finetune_paraphrase_generation(args):
                     best_batchsize = b
                     best_dropout = dropout
                 # Clear GPU memory
-                del model
-                torch.cuda.empty_cache() #Todo: will it also delete the best parameters?
-    print(f"Best params: \n LR: {best_lr} \n batch size: {best_batchsize} \n dropout: {best_dropout}")
+                #del model #todo: put back
+                #torch.cuda.empty_cache() #Todo: will it also delete the best parameters? and put it back
+    print(f"Best params: \n LR: {best_lr} \n batch size: {best_batchsize} \n dropout: {best_dropout}. Best BLEU: {best_bleu}.")
+
+    #paraphrases = generate_paraphrases(model, val_data, device, tokenizer)
+    #paraphrases.to_csv("predictions/bart/generation_predict.csv", index=False, sep="\t")
+
 
     #test_ids = test_dataset["id"]
     #test_results = test_model(test_data, test_ids, device, model, tokenizer)
