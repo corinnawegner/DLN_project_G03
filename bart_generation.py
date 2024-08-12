@@ -145,7 +145,8 @@ def train_model(model, train_data, val_data, device, tokenizer, learning_rate=hy
                         num_beams=5,
                         early_stopping=True,
                     )
-                    penalty = alpha_ngram * ngram_penalty(predictions) + alpha_diversity * diversity_penalty(
+                    if alpha_ngram != 0 or alpha_diversity != 0:
+                        penalty = alpha_ngram * ngram_penalty(predictions) + alpha_diversity * diversity_penalty(
                         predictions)
 
                 # Add penalty to loss
@@ -371,31 +372,25 @@ def finetune_paraphrase_generation(args):
     hyperparameter_grid = {
         'learning_rate': [1e-5, 5e-5, 8e-5, 1e-4, 1e-6],
         'batch_size': [128, 64, 32],  #, 128], This gives memory issues
-        'dropout_rate': [0.3, 0.0],
+        'dropout_rate': [0.3,0.1,0.0],
+        #'activation_function': ['gelu', 'relu']
         'alpha': [],#todo: add alpha from penalty function
     }
 
     hyperparameter_grid = {
         'learning_rate': [1e-5],# 5e-5, 8e-5, 1e-4, 1e-6],
-        'batch_size': [128],
+        'batch_size': [64],
         'dropout_rate': [0.0]#, 0.1, 0.0]
     }
 
     for b in hyperparameter_grid['batch_size']:
         for dropout in hyperparameter_grid['dropout_rate']:
             for lr in hyperparameter_grid['learning_rate']:
-                #if dropout > 0 and b > 32:
-                 #   continue
-                if dropout > 0:
-                    config = BartConfig.from_pretrained("facebook/bart-large")
-                    config.attention_dropout = dropout
-                    config.activation_dropout = dropout
-                    config.dropout = dropout
-                    model = BartForConditionalGeneration.from_pretrained("facebook/bart-large", config=config,
-                                                                         local_files_only=True)
-                else:
-                    model = BartForConditionalGeneration.from_pretrained("facebook/bart-large",
-                                                                         local_files_only=True)
+                config = BartConfig.from_pretrained("facebook/bart-large")
+                #config.activation_function =
+                config.dropout = dropout
+                model = BartForConditionalGeneration.from_pretrained("facebook/bart-large", config=config,
+                                                                     local_files_only=True)
                 model.to(device)
                 if DEV_MODE:
                     scores_before_training = evaluate_model(model, val_data, device, tokenizer)
@@ -432,6 +427,7 @@ def finetune_paraphrase_generation(args):
 if __name__ == "__main__":
     args = get_args()
     seed_everything(args.seed)
+    finetune_paraphrase_generation(args)
     finetune_paraphrase_generation(args)
     # Delete the saved model file
     if os.path.exists(model_save_path):
