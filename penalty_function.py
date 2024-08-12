@@ -41,3 +41,16 @@ def length_penalty(predictions, max_length=50):
             penalty += (length - max_length)  # Penalize long sentences
 
     return penalty / batch_size
+
+
+def diversity_penalty(predictions):
+    batch_size, seq_length = predictions.size()
+    penalty = 0.0
+
+    for i in range(batch_size):
+        tokens = predictions[i].cpu().tolist()
+        unique_tokens = len(set(tokens))
+        if unique_tokens < 0.5 * seq_length:  # Penalize if less than 50% of tokens are unique
+            penalty += (0.5 * seq_length - unique_tokens)
+
+    return penalty / batch_size

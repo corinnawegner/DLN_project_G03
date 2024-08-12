@@ -18,6 +18,7 @@ import os
 #import nltk
 #nltk.download('wordnet')
 
+
 try:
     local_hostname = socket.gethostname()
 except:
@@ -29,8 +30,10 @@ if local_hostname == 'Corinna-PC' or local_hostname == "TABLET-TTS0K9R0": #Todo:
 
 TQDM_DISABLE = not DEV_MODE
 
-
 warnings.filterwarnings("ignore", category=FutureWarning)
+
+r = random.randint(10000, 99999)
+model_save_path = f"models/bart_generation_earlystopping_{r}.pt"
 
 hyperparams = {
     'optimizer': [AdamW, EAdam],
@@ -43,6 +46,7 @@ hyperparams = {
     'max_length': 256,
     'alpha': 1e-2,
 }  # Todo: make every function take values from here
+
 
 def transform_data(dataset, max_length=256):
     """
@@ -109,7 +113,7 @@ def train_model(model, train_data, val_data, device, tokenizer, learning_rate=hy
     num_training_steps = num_epochs * len(train_data) // accumulation_steps
     progress_bar = tqdm(range(num_training_steps), disable=TQDM_DISABLE)
 
-    optimizer = EAdam(model.parameters(), lr=learning_rate)
+    optimizer = AdamW(model.parameters(), lr=learning_rate)
     #optimizer = hyperparams['optimizer'] #Todo: After hyperparameter search, use this
     scaler = GradScaler()
 
@@ -117,7 +121,6 @@ def train_model(model, train_data, val_data, device, tokenizer, learning_rate=hy
     best_bleu_score = -10
     best_epoch = 0
     epochs_without_improvement = 0
-    model_save_path = f"models/bart_generation_earlystopping.pt"
 
     # Start timing
     total_start_time = time.time()
@@ -173,8 +176,6 @@ def train_model(model, train_data, val_data, device, tokenizer, learning_rate=hy
                 epochs_without_improvement = 0
                 # Save the best model
                 torch.save(model.state_dict(), model_save_path)
-                if print_messages:
-                    print(f"Best model saved at epoch {epoch + 1} with BLEU score: {best_bleu_score:.3f}")
             else:
                 epochs_without_improvement += 1
 
@@ -192,11 +193,12 @@ def train_model(model, train_data, val_data, device, tokenizer, learning_rate=hy
         print(f"Total training time: {total_training_time:.2f} seconds.")
 
     # Load the best model before returning
-    if os.path.exists(model_save_path):
-        model.load_state_dict(torch.load(model_save_path))
-        if print_messages:
-            print(f"Best model reloaded from {model_save_path}.")
-
+    del model
+    torch.cuda.empty_cache()
+    model = BartForConditionalGeneration.from_pretrained("facebook/bart-large",
+                                                         local_files_only=True)
+    model.load_state_dict(torch.load(model_save_path))
+    model = model.to(device)
     return model
 
 
@@ -431,3 +433,9 @@ if __name__ == "__main__":
     args = get_args()
     seed_everything(args.seed)
     finetune_paraphrase_generation(args)
+    # Delete the saved model file
+    if os.path.exists(model_save_path):
+        os.remove(model_save_path)
+        print(f"Deleted model file at {model_save_path}")
+    else:
+        print(f"Model file at {model_save_path} not found.")
