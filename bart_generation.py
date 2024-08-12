@@ -146,9 +146,7 @@ def train_model(model, train_data, val_data, device, tokenizer, learning_rate=hy
                     if alpha_ngram != 0 or alpha_diversity != 0:
                         penalty = alpha_ngram * ngram_penalty(predictions) + alpha_diversity * diversity_penalty(
                         predictions)
-
-                # Add penalty to loss
-                loss = loss + penalty if penalty else loss
+                        loss = loss + penalty
 
             scaler.scale(loss).backward()
 
