@@ -17,7 +17,6 @@ from bleurt_pytorch import BleurtForSequenceClassification, BleurtTokenizer
 from torch.cuda.amp import autocast, GradScaler
 #from penalty_function import ngram_penalty, diversity_penalty#, length_penalty
 import time
-import os
 
 try:
     local_hostname = socket.gethostname()
@@ -169,7 +168,7 @@ def train_model(model, train_data, val_data, device, tokenizer, learning_rate=hy
             print(f"Epoch {epoch + 1}/{num_epochs} completed in {epoch_duration:.2f} seconds.")
 
         if val_data is not None:
-            scores = evaluate_model(model, val_data, device, tokenizer, print_messages=print_messages)
+            scores = evaluate_model(model, val_data, device, tokenizer)
             b = scores['bleu_score']
             bleu_scores.append(b)
 
