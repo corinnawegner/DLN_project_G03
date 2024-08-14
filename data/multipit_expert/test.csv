@@ -1,4 +1,4 @@
-sentence1,sentence2,label
+sentence1,sentence2,is_duplicate
 "Sweden's first female PM Magdalena Andersson , resigns on DAY ONE !",My warm congratulations to Magdalena Andersson on becoming Sweden's first female Prime Minister !,0
 "Sweden's first female PM Magdalena Andersson , resigns on DAY ONE !","Magdalena Andersson , nicknamed Bulldozer , is most likely going to be the first female Prime Minister of Sweden on 24 Nov .",0
 "Sweden's first female PM Magdalena Andersson , resigns on DAY ONE !","This is Magdalena Andersson , Sweden's first female prime minister , as of today .",0

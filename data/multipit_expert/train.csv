@@ -1,4 +1,4 @@
-sentence1,sentence2,label
+sentence1,sentence2,is_duplicate
 "Today is the #wintersolstice , marking the beginning of winter in the Northern Hemisphere .",It's the winter solstice in the northern hemisphere .,1
 "Today is the #wintersolstice , marking the beginning of winter in the Northern Hemisphere .",Winter Solstice blessings + love to those in the northern hemisphere .,0
 "Today is the #wintersolstice , marking the beginning of winter in the Northern Hemisphere .",It's the first day of Northern Hemisphere winter !,0
