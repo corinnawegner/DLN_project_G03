@@ -4,20 +4,15 @@ import numpy as np
 import pandas as pd
 import torch
 from sacrebleu.metrics import BLEU
-#from nltk.translate.meteor_score import single_meteor_score
 from torch.utils.data import DataLoader, TensorDataset
 from tqdm import tqdm
-from transformers import AutoTokenizer, BartForConditionalGeneration, BartConfig
-from optimizer import AdamW
+from transformers import AutoTokenizer, BartForConditionalGeneration, BartConfig, AdamW
 from torch.cuda.amp import autocast, GradScaler
-from penalty_function import ngram_penalty, diversity_penalty#, length_penalty
+from penalty_function import ngram_penalty, diversity_penalty
 import time
 import warnings
 import socket
 import os
-#import nltk
-#nltk.download('wordnet')
-
 
 try:
     local_hostname = socket.gethostname()
@@ -25,7 +20,7 @@ except:
     local_hostname = None
 
 DEV_MODE = False
-if local_hostname == 'Corinna-PC' or local_hostname == "TABLET-TTS0K9R0": #Todo: Add also laptop
+if local_hostname in ['Corinna-PC', "TABLET-TTS0K9R0"]:
     DEV_MODE = True
 
 TQDM_DISABLE = not DEV_MODE
@@ -33,27 +28,69 @@ TQDM_DISABLE = not DEV_MODE
 warnings.filterwarnings("ignore", category=FutureWarning)
 
 r = random.randint(10000, 99999)
-model_save_path = f"models/bart_generation_earlystopping_{r}.pt"
+model_save_path = f"models/bart_generation_prefix_{r}.pt"
 
 hyperparams = {
     'optimizer': AdamW,
-    'learning_rate': [1e-5, 5e-5, 8e-5, 1e-4, 1e-6],
-    'batch_size': [128, 64, 32],
-    'dropout_rate': [0.3, 0.0],
+    'learning_rate': 5e-5,
+    'batch_size': 32,
+    'dropout_rate': 0.0,
     'patience': 3,
     'num_epochs': 100 if not DEV_MODE else 10,
     'alpha': 1e-2,
-}  # Todo: make every function take values from here
+}
+
+
+class PrefixTuningBart(BartForConditionalGeneration):
+    def __init__(self, config: BartConfig, prefix_length: int = 5):
+        super().__init__(config)
+        self.prefix_length = prefix_length
+        self.prefix_embedding = torch.nn.Embedding(prefix_length, config.d_model)
+
+    def forward(self, input_ids=None, attention_mask=None, labels=None, inputs_embeds=None, **kwargs):
+        print(f'input_ids in the class PrefixTuningBart: {input_ids}')
+        print(f'input_embeds in the class PrefixTuningBart: {inputs_embeds}')
+
+        if input_ids is not None:
+            batch_size = input_ids.shape[0]
+            device = input_ids.device
+        elif inputs_embeds is not None:
+            batch_size = inputs_embeds.shape[0]
+            device = inputs_embeds.device
+        else:
+            raise ValueError("Either input_ids or inputs_embeds must be provided")
+
+        print("first forward done")
+
+        # Create prefix tokens and embeddings
+        prefix_tokens = torch.arange(self.prefix_length, dtype=torch.long, device=device)
+        prefix_tokens = prefix_tokens.unsqueeze(0).expand(batch_size, -1)
+        prefix_embeddings = self.prefix_embedding(prefix_tokens)
+
+        if input_ids is not None:
+            inputs_embeds = self.model.shared(input_ids)
+        else:
+            inputs_embeds = inputs_embeds
+
+        inputs_embeds = torch.cat((prefix_embeddings, inputs_embeds), dim=1)
+
+        if attention_mask is not None:
+            prefix_attention_mask = torch.ones(batch_size, self.prefix_length, device=device)
+            attention_mask = torch.cat((prefix_attention_mask, attention_mask), dim=1)
+
+        # Call the forward method of the parent class
+        outputs = super().forward(
+            input_ids=None,
+            inputs_embeds=inputs_embeds,
+            attention_mask=attention_mask,
+            labels=labels,
+            **kwargs
+        )
+
+        return outputs
 
 
 def transform_data(dataset, max_length=256):
-    """
-    Turn the data to the format you want to use.
-    Use AutoTokenizer to obtain encoding (input_ids and attention_mask).
-    Tokenize the sentence pair in the following format:
-    sentence_1 + SEP + sentence_1 segment location + SEP + paraphrase types.
-    Return Data Loader.
-    """
     tokenizer = AutoTokenizer.from_pretrained("facebook/bart-large")
 
     input_ids = []
@@ -95,14 +132,13 @@ def transform_data(dataset, max_length=256):
     labels = torch.stack(labels)
 
     dataset = TensorDataset(input_ids, attention_masks, labels)
-    dataloader = DataLoader(dataset, batch_size=32, shuffle=False) #Todo: Shuffle train dataset? I think I do this when loading the dataset
+    dataloader = DataLoader(dataset, batch_size=32, shuffle=False)
 
     return dataloader
 
-
-
-def train_model(model, train_data, val_data, device, tokenizer, learning_rate=hyperparams['learning_rate'], batch_size=hyperparams['batch_size'],
-                patience=hyperparams['patience'], print_messages=DEV_MODE, alpha_ngram=1e-2, alpha_diversity=1e-2):
+def train_model(model, train_data, val_data, device, tokenizer, learning_rate=hyperparams['learning_rate'],
+                batch_size=hyperparams['batch_size'], patience=hyperparams['patience'],
+                print_messages=DEV_MODE, alpha_ngram=1e-2, alpha_diversity=1e-2, prefix_length=5):
     accumulation_steps = int(batch_size / 32)
     if not DEV_MODE:
         torch.cuda.empty_cache()
@@ -112,7 +148,6 @@ def train_model(model, train_data, val_data, device, tokenizer, learning_rate=hy
     progress_bar = tqdm(range(num_training_steps), disable=TQDM_DISABLE)
 
     optimizer = AdamW(model.parameters(), lr=learning_rate)
-    #optimizer = hyperparams['optimizer'] #Todo: After hyperparameter search, use this
     scaler = GradScaler()
 
     bleu_scores = []
@@ -120,12 +155,11 @@ def train_model(model, train_data, val_data, device, tokenizer, learning_rate=hy
     best_epoch = 0
     epochs_without_improvement = 0
 
-    # Start timing
     total_start_time = time.time()
 
     model.train()
     for epoch in range(num_epochs):
-        epoch_start_time = time.time()  # Start time for this epoch
+        epoch_start_time = time.time()
 
         optimizer.zero_grad()
         for i, batch in enumerate(train_data):
@@ -133,22 +167,18 @@ def train_model(model, train_data, val_data, device, tokenizer, learning_rate=hy
             with autocast():
                 outputs = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
                 loss = outputs.loss / accumulation_steps
-
-                # Compute the n-gram penalty
                 with torch.no_grad():
+                    print(f"input_ids just before predictions: {input_ids}")
                     predictions = model.generate(
-                        input_ids,
+                        input_ids=input_ids,
                         attention_mask=attention_mask,
                         max_length=50,
                         num_beams=5,
                         early_stopping=True,
                     )
-                    if alpha_ngram != 0 or alpha_diversity != 0:
-                        penalty = alpha_ngram * ngram_penalty(predictions) + alpha_diversity * diversity_penalty(
-                        predictions)
-
-                # Add penalty to loss
-                loss = loss + penalty if penalty else loss
+                    #if alpha_ngram != 0 or alpha_diversity != 0:
+                     #   penalty = alpha_ngram * ngram_penalty(predictions) + alpha_diversity * diversity_penalty(predictions)
+                       # loss = loss + penalty
 
             scaler.scale(loss).backward()
 
@@ -158,7 +188,6 @@ def train_model(model, train_data, val_data, device, tokenizer, learning_rate=hy
                 optimizer.zero_grad()
                 progress_bar.update(1)
 
-        # End time for this epoch
         epoch_end_time = time.time()
         epoch_duration = epoch_end_time - epoch_start_time
         if print_messages:
@@ -173,29 +202,25 @@ def train_model(model, train_data, val_data, device, tokenizer, learning_rate=hy
                 best_bleu_score = scores['bleu_score']
                 best_epoch = epoch + 1
                 epochs_without_improvement = 0
-                # Save the best model
                 torch.save(model.state_dict(), model_save_path)
             else:
                 epochs_without_improvement += 1
 
             if epochs_without_improvement >= patience:
                 if print_messages:
-                    print(f"Early stopping triggered after {epoch + 1} epochs. \n")
-                    print(f'Best BLEU score: {best_bleu_score} at epoch {best_epoch}. \n')
+                    print(f"Early stopping triggered after {epoch + 1} epochs.")
+                    print(f'Best BLEU score: {best_bleu_score} at epoch {best_epoch}.')
                     print(f"History: {bleu_scores}")
                 break
 
-    # End total timing
     total_end_time = time.time()
     total_training_time = total_end_time - total_start_time
     if print_messages:
         print(f"Total training time: {total_training_time:.2f} seconds.")
 
-    # Load the best model before returning
     del model
     torch.cuda.empty_cache()
-    model = BartForConditionalGeneration.from_pretrained("facebook/bart-large",
-                                                         local_files_only=True)
+    model = PrefixTuningBart.from_pretrained("facebook/bart-large", local_files_only=True, prefix_length=prefix_length)
     model.load_state_dict(torch.load(model_save_path))
     model = model.to(device)
     return model
@@ -211,7 +236,6 @@ def test_model(test_data, test_ids, device, model, tokenizer):
             input_ids = input_ids.to(device)
             attention_mask = attention_mask.to(device)
 
-            # Generate paraphrases
             outputs = model.generate(
                 input_ids,
                 attention_mask=attention_mask,
@@ -243,7 +267,6 @@ def generate_paraphrases(model, dataloader, device, tokenizer):
         for batch in dataloader:
             input_ids, attention_mask, labels = [tensor.to(device) for tensor in batch]
 
-            # Generate paraphrases
             outputs = model.generate(
                 input_ids,
                 attention_mask=attention_mask,
@@ -271,61 +294,6 @@ def generate_paraphrases(model, dataloader, device, tokenizer):
             })
             return paraphrases
 
-def evaluate_model(model, dataloader, device, tokenizer, print_messages=True):
-    """
-    You can use your train/validation set to evaluate models performance with the BLEU score.
-    test_data is a DataLoader, where the column "sentence1" contains all input sentence and
-    the column "sentence2" contains all target sentences
-    """
-    model.eval()
-    bleu = BLEU()
-    predictions = []
-    references = []
-    inputs = []
-
-    with torch.no_grad():
-        for batch in dataloader:
-            input_ids, attention_mask, labels = [tensor.to(device) for tensor in batch]
-
-            # Generate paraphrases
-            outputs = model.generate(
-                input_ids,
-                attention_mask=attention_mask,
-                max_length=50,
-                num_beams=5,
-                early_stopping=True,
-            )
-
-            pred_text = [
-                tokenizer.decode(g, skip_special_tokens=True, clean_up_tokenization_spaces=True)
-                for g in outputs
-            ]
-            references.extend([
-                tokenizer.decode(label, skip_special_tokens=True, clean_up_tokenization_spaces=True)
-                for label in labels
-            ])
-            inputs.extend([
-                tokenizer.decode(input_id, skip_special_tokens=True, clean_up_tokenization_spaces=True)
-                for input_id in input_ids
-            ])
-            predictions.extend(pred_text)
-
-    # Calculate BLEU score
-    bleu_score_reference = bleu.corpus_score(references, [predictions]).score
-    # Penalize BLEU score if its to close to the input
-    bleu_score_inputs = 100 - bleu.corpus_score(inputs, [predictions]).score
-    penalized_bleu = bleu_score_reference * bleu_score_inputs / 52
-    if print_messages:
-        print(f"BLEU Score: {bleu_score_reference}", f"Negative BLEU Score with input: {bleu_score_inputs}")
-
-        # Penalize BLEU and rescale it to 0-100
-        # todo: If you perfectly predict all the targets, you should get an penalized BLEU score of around 52
-        print(f"Penalized BLEU Score: {penalized_bleu}")
-
-    #meteor_score = single_meteor_score(references, predictions)
-
-    return {"bleu_score": penalized_bleu, "meteor_score": "meteor_score not computed"} #todo: put back meteor if want to use
-
 def seed_everything(seed=11711):
     random.seed(seed)
     np.random.seed(seed)
@@ -339,12 +307,42 @@ def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--seed", type=int, default=11711)
     parser.add_argument("--use_gpu", action="store_true")
+    parser.add_argument("--prefix_length", type=int, default=5)
+    parser.add_argument("--train_data_path", type=str, default="data/etpc-paraphrase-train.csv")
+    parser.add_argument("--val_data_path", type=str, default="val.csv")
+    parser.add_argument("--test_data_path", type=str, default="data/etpc-paraphrase-detection-test-student.csv")
+    parser.add_argument("--output_path", type=str, default="results.csv")
+    parser.add_argument("--ngram_alpha", type=float, default=1e-2)
+    parser.add_argument("--diversity_alpha", type=float, default=1e-2)
+    parser.add_argument("--batch_size", type=int, default=32)
+    parser.add_argument("--learning_rate", type=float, default=5e-5)
+    parser.add_argument("--patience", type=int, default=3)
+    parser.add_argument("--num_epochs", type=int, default=100)
+    parser.add_argument("--dropout_rate", type=float, default=0.1)
+
     args = parser.parse_args()
     return args
 
 
-def finetune_paraphrase_generation(args):
-    device = torch.device("cuda") if args.use_gpu else torch.device("cpu")
+def evaluate_model(model, dataloader, device, tokenizer, print_messages=False):
+    paraphrases = generate_paraphrases(model, dataloader, device, tokenizer)
+    references = paraphrases['references'].tolist()
+    predictions = paraphrases['predictions'].tolist()
+
+    metric = BLEU()
+    bleu_score = metric.corpus_score(predictions, [references]).score
+
+    if print_messages:
+        print(f'BLEU Score: {bleu_score}')
+
+    return {'bleu_score': bleu_score}
+
+
+def main():
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    #device = torch.device("cuda") if args.use_gpu else torch.device("cpu")
     tokenizer = AutoTokenizer.from_pretrained("facebook/bart-large", local_files_only=True)
 
     train_dataset = pd.read_csv("data/etpc-paraphrase-train.csv", sep="\t")
@@ -354,83 +352,31 @@ def finetune_paraphrase_generation(args):
     val_dataset = train_dataset_shuffled.sample(frac=0.2, random_state=42)
     train_dataset = train_dataset_shuffled.drop(val_dataset.index)
 
-    train_data = transform_data(train_dataset)
-    val_data = transform_data(val_dataset)
+    train_dataloader = transform_data(train_dataset)
+    val_dataloader = transform_data(val_dataset)
+    #test_dataloader = transform_data(test_dar)
 
-    #test_dataset = pd.read_csv("data/etpc-paraphrase-generation-test-student.csv", sep="\t")#[:10]
-    #test_dataset = test_dataset if not DEV_MODE else test_dataset[:10] #todo: put back at the end
+    config = BartConfig.from_pretrained("facebook/bart-large")
+    config.dropout = hyperparams['dropout_rate']
 
-    print(f"Loaded {len(train_dataset)} training samples.")
+    model = PrefixTuningBart.from_pretrained("facebook/bart-large", config=config, prefix_length=args.prefix_length)
+    model = model.to(device)
 
-    best_bleu = 0
-    best_lr = 0
-    best_dropout = 42
-    best_batchsize = 0
+    # Train and validate the model
+    trained_model = train_model(model, train_dataloader, val_dataloader, device, tokenizer,
+                                learning_rate=args.learning_rate, batch_size=args.batch_size,
+                                patience=args.patience, alpha_ngram=args.ngram_alpha,
+                                alpha_diversity=args.diversity_alpha, prefix_length=args.prefix_length)
 
-    hyperparameter_grid = {
-        'learning_rate': [1e-5, 5e-5, 8e-5, 1e-4, 1e-6],
-        'batch_size': [128, 64, 32],  #, 128], This gives memory issues
-        'dropout_rate': [0.3, 0.1, 0.0]
-        #'activation_function': ['gelu', 'relu']
+    # Test the model
+    #test_ids = test_df['id'].tolist()
+    #results = test_model(test_dataloader, test_ids, device, trained_model, tokenizer)
 
-    }
+    # Save the results
+    #results.to_csv(args.output_path, index=False)
 
-#    hyperparameter_grid = {
- #       'learning_rate': [1e-5],# 5e-5, 8e-5, 1e-4, 1e-6],
-  #      'batch_size': [64],
-   #     'dropout_rate': [0.0]#, 0.1, 0.0]
-    #}
-
-    for b in hyperparameter_grid['batch_size']:
-        for dropout in hyperparameter_grid['dropout_rate']:
-            for lr in hyperparameter_grid['learning_rate']:
-                config = BartConfig.from_pretrained("facebook/bart-large")
-                config.activation_dropout = dropout
-                config.attention_dropout = dropout
-                config.dropout = dropout
-                model = BartForConditionalGeneration.from_pretrained("facebook/bart-large", config=config,
-                                                                     local_files_only=True)
-                model.to(device)
-                if DEV_MODE:
-                    scores_before_training = evaluate_model(model, val_data, device, tokenizer)
-                    bleu_score_before_training, _ = scores_before_training.values()
-                model = train_model(model, train_data, val_data, device, tokenizer, learning_rate=lr, batch_size=b, patience=hyperparams['patience'], print_messages=True, alpha_ngram=0.0, alpha_diversity=0.0) #todo: set print_messages to DEV_MODE again
-                scores = evaluate_model(model, val_data, device, tokenizer)
-                bleu_score, _ = scores.values()
-                print(f"Results for learning rate {lr}, batch_size: {b}, dropout rate: {dropout}:")
-                print(f"The penalized BLEU-score of the model is: {bleu_score:.3f}")
-                print("\n")
-                #print(f"The METEOR-score of the model is: {meteor_score:.3f}")
-                #print(f"Without training: \n BLEU: {bleu_score_before_training:.3f}")# \n METEOR: {meteor_score_before_training}")
-                if bleu_score > best_bleu:
-                    best_bleu = bleu_score
-                    best_lr = lr
-                    best_batchsize = b
-                    best_dropout = dropout
-                # Clear GPU memory
-                #del model #todo: put back
-                #torch.cuda.empty_cache() #Todo: will it also delete the best parameters? and put it back
-    print(f"Best params: \n LR: {best_lr} \n batch size: {best_batchsize} \n dropout: {best_dropout}. Best BLEU: {best_bleu}.")
-
-    #paraphrases = generate_paraphrases(model, val_data, device, tokenizer)
-    #paraphrases.to_csv("predictions/bart/generation_predict.csv", index=False, sep="\t")
-
-
-    #test_ids = test_dataset["id"]
-    #test_results = test_model(test_data, test_ids, device, model, tokenizer)
-    #if not DEV_MODE:
-    #    test_results.to_csv(
-    #        "predictions/bart/etpc-paraphrase-generation-test-output.csv", index=False, sep="\t"
-    #    )
 
 if __name__ == "__main__":
     args = get_args()
     seed_everything(args.seed)
-    finetune_paraphrase_generation(args)
-    finetune_paraphrase_generation(args)
-    # Delete the saved model file
-    if os.path.exists(model_save_path):
-        os.remove(model_save_path)
-        print(f"Deleted model file at {model_save_path}")
-    else:
-        print(f"Model file at {model_save_path} not found.")
+    main()
