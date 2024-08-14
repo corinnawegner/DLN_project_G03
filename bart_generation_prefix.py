@@ -41,7 +41,7 @@ model_save_path = f"models/bart_generation_prefix_{r}.pt"
 
 hyperparams = {
     'optimizer': AdamW,
-    'learning_rate': 1e-5,
+    'learning_rate': 1e-3,
     'batch_size': 64,
     'dropout_rate': 0.0,
     'patience': 3,
@@ -207,7 +207,7 @@ def train_model(model, train_data, val_data, device, tokenizer, learning_rate=hy
     model = BartForConditionalGeneration.from_pretrained("facebook/bart-large",
                                                          local_files_only=True)
     model = get_peft_model(model, peft_config)
-    model.print_trainable_parameters()
+    model.to(device)
     return model
 
 
@@ -368,7 +368,6 @@ def finetune_paraphrase_generation(args):
                                                          local_files_only=True)
     model = get_peft_model(model, peft_config)
     model.print_trainable_parameters()
-    print(model)
     model.to(device)
 
     if DEV_MODE:
