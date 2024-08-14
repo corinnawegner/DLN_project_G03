@@ -15,6 +15,9 @@
 #module load anaconda3
 #source activate dnlp # Or whatever you called your environment.
 
+#pip install --user bleurt-pytorch   # Use --user to install in your home directory
+#pip install --user nltk
+
 # Printing out some info.
 echo "Submitting job with sbatch from directory: ${SLURM_SUBMIT_DIR}"
 echo "Home directory: ${HOME}"

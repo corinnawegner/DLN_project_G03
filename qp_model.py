@@ -5,12 +5,10 @@ import warnings
 import socket
 from torch.utils.data import Dataset, DataLoader
 import pandas as pd
-from sklearn.model_selection import train_test_split
 from tqdm import tqdm
 import torch
 import torch.nn as nn
 from transformers import ElectraTokenizer, ElectraModel
-from sklearn.metrics import mean_squared_error
 import quality_measure as qm
 
 try:
@@ -27,6 +25,8 @@ TQDM_DISABLE = not DEV_MODE
 batch_size = 64 if not DEV_MODE else 1
 
 warnings.filterwarnings("ignore", category=FutureWarning)
+
+
 
 class QualityPredictor(nn.Module):
     def __init__(self, model_name='google/electra-base-discriminator'):
@@ -82,6 +82,30 @@ class QualityDataset(Dataset):
                 'input_ids_2': input_ids_2, 'attention_mask_2': attention_mask_2,
                 'labels': torch.tensor(quality, dtype=torch.float)}
 
+def mean_squared_error(y_true, y_pred):
+    """
+    Compute the mean squared error between true values and predicted values.
+
+    Parameters:
+    - y_true (np.ndarray): Array of true values.
+    - y_pred (np.ndarray): Array of predicted values.
+
+    Returns:
+    - float: The mean squared error.
+    """
+    # Ensure inputs are numpy arrays
+    y_true = np.asarray(y_true)
+    y_pred = np.asarray(y_pred)
+
+    # Calculate the squared differences
+    squared_diffs = (y_true - y_pred) ** 2
+
+    # Compute the mean of squared differences
+    mse = np.mean(squared_diffs)
+
+    return mse
+
+
 def prepare_data(df):
     tokenizer = ElectraTokenizer.from_pretrained('google/electra-base-discriminator')
     sentences_1 = df['sentence_1'].tolist()
@@ -90,11 +114,14 @@ def prepare_data(df):
     dataset = QualityDataset(sentences_1, sentences_2, qualities, tokenizer, max_length=32)
     return dataset
 
-def train_model(model, train_loader, num_epochs=3):
-    print("Training Quality predictor \n")
-    model.train()
+def train_quality_predictor(qpmodel, df_data, num_epochs):
+    train_dataset = prepare_data(df_data) #todo: Add the datasets from the paper!?
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 
-    qp_optimizer = AdamW(model.parameters(), lr=5e-5)
+    print("Training Quality predictor \n")
+    qpmodel.train()
+
+    qp_optimizer = AdamW(qpmodel.parameters(), lr=5e-5) #todo: find optimal learning rate
     qp_scheduler = StepLR(qp_optimizer, step_size=1, gamma=0.95)
     criterion = nn.MSELoss()
 
@@ -108,7 +135,7 @@ def train_model(model, train_loader, num_epochs=3):
             labels = batch['labels']
 
             qp_optimizer.zero_grad()
-            outputs = model(input_ids_1, attention_mask_1, input_ids_2, attention_mask_2)
+            outputs = qpmodel(input_ids_1, attention_mask_1, input_ids_2, attention_mask_2)
             loss = criterion(outputs, labels)
             loss.backward()
             qp_optimizer.step()
@@ -117,9 +144,9 @@ def train_model(model, train_loader, num_epochs=3):
 
         avg_loss = epoch_loss / len(train_loader)
         print(f'Epoch {epoch + 1}/{num_epochs}, Loss: {avg_loss:.4f}')
-    model.eval()
+    qpmodel.eval()
     #print("Quality predictor training finished")
-    return model
+    return qpmodel
 
 def evaluate_model(model, test_loader):
     model.eval()
@@ -159,38 +186,51 @@ def predict_quality(model, sentence_pairs):
         outputs = model(inputs_1['input_ids'], inputs_1['attention_mask'],
                         inputs_2['input_ids'], inputs_2['attention_mask'])
     return outputs
-def load_toy_data():
-    # Example data
+
+
+def load_toy_data(model, tokenizer):
+    # Example sentences
+    sentences_1 = [
+        'The quick brown fox jumps over the lazy dog.',
+        'A fast brown fox leaps over a lazy canine.',
+        'The quick brown fox jumps over a sleepy dog.',
+        'A speedy brown fox leaps over a lazy dog.',
+        'The swift brown fox jumps over the lethargic dog.'
+    ]
+
+    sentences_2 = [
+        'A fast brown fox leaps over a lazy canine.',
+        'The quick brown fox jumps over the lazy dog.',
+        'A speedy brown fox leaps over a lazy dog.',
+        'The quick brown fox jumps over a sleepy dog.',
+        'A speedy brown fox leaps over a lazy dog.'
+    ]
+
+    # Lists to store the computed quality scores
+    list_sem = []
+    list_syn = []
+    list_lex = []
+
+    # Calculate quality scores using the model and tokenizer
+    for s1, s2 in zip(sentences_1, sentences_2):
+        qv = qm.quality_vector(s1, s2)
+        list_sem.append(qv[0])
+        list_syn.append(qv[1])
+        list_lex.append(qv[2])
+
+    # Create a DataFrame with the sentences and computed quality scores
     data = {
-        'sentence_1': [
-            'The quick brown fox jumps over the lazy dog.',
-            'A fast brown fox leaps over a lazy canine.',
-            'The quick brown fox jumps over a sleepy dog.',
-            'A speedy brown fox leaps over a lazy dog.',
-            'The swift brown fox jumps over the lethargic dog.'
-        ],
-        'sentence_2': [
-            'A fast brown fox leaps over a lazy canine.',
-            'The quick brown fox jumps over the lazy dog.',
-            'A speedy brown fox leaps over a lazy dog.',
-            'The quick brown fox jumps over a sleepy dog.',
-            'A speedy brown fox leaps over a lazy dog.'
-        ],
-        'quality_sem': [0.8, 0.7, 0.75, 0.65, 0.85],
-        'quality_syn': [0.7, 0.6, 0.7, 0.6, 0.75],
-        'quality_lex': [0.65, 0.55, 0.6, 0.5, 0.7]
+        'sentence_1': sentences_1,
+        'sentence_2': sentences_2,
+        'quality_sem': list_sem,
+        'quality_syn': list_syn,
+        'quality_lex': list_lex
     }
+
     df = pd.DataFrame(data)
     return df
 
-def train_tset_split(df):
-    train_df, test_df = train_test_split(df, test_size=0.2, random_state=42)
-
-    train_dataset = prepare_data(train_df)
-    test_dataset = prepare_data(test_df)
-    return train_dataset, test_dataset
-
-def load_etpc_paraphrase():
+def load_etpc_paraphrase(model, tokenizer):
     dataset = pd.read_csv("data/etpc-paraphrase-train.csv", sep="\t")
     list_s1 = []
     list_s2 = []
@@ -218,13 +258,18 @@ def load_etpc_paraphrase():
     return df
 
 """
+from bleurt_pytorch import BleurtConfig, BleurtForSequenceClassification, BleurtTokenizer
+config = BleurtConfig.from_pretrained('lucadiliello/BLEURT-20-D12')
+bleurt_model = BleurtForSequenceClassification.from_pretrained('lucadiliello/BLEURT-20-D12') #, config=config)
+bleurt_tokenizer = BleurtTokenizer.from_pretrained('lucadiliello/BLEURT-20-D12')
+
 # Example inference
-df_data = load_toy_data()
+df_data = load_toy_data(bleurt_model, bleurt_tokenizer)
 train_dataset = prepare_data(df_data)
 train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 
 qpmodel = QualityPredictor()
-qpmodel = train_model(qpmodel, train_loader, num_epochs=3)
+qpmodel = train_quality_predictor(qpmodel, df_data, num_epochs=3)
 sentence_pairs = [
     ('The quick brown fox jumps over the lazy dog.', 'A fast brown fox leaps over a lazy canine.'),
     ('The quick brown fox jumps over the lazy dog.', 'A speedy brown fox leaps over a lazy dog.'),
