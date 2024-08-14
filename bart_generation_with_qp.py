@@ -12,6 +12,12 @@ import qp_model
 import warnings
 import socket
 from bleurt_pytorch import BleurtForSequenceClassification, BleurtTokenizer
+#from nltk.translate.meteor_score import single_meteor_score
+
+from torch.cuda.amp import autocast, GradScaler
+#from penalty_function import ngram_penalty, diversity_penalty#, length_penalty
+import time
+import os
 
 try:
     local_hostname = socket.gethostname()
@@ -28,6 +34,18 @@ batch_size = 64 if not DEV_MODE else 1
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 
+r = random.randint(10000, 99999)
+model_save_path = f"models/bart_generation_quality_control_{r}.pt"
+
+hyperparams = {
+    'optimizer': AdamW,
+    'learning_rate': 1e-5,
+    'batch_size': 64,
+    'dropout_rate': 0.0,
+    'patience': 3,
+    'num_epochs': 100 if not DEV_MODE else 10,
+    'alpha': 1e-2,
+}  # Todo: make every function take values from here
 
 def transform_data_with_qualitypredictor(dataset, qpmodel, predict_with_qp, q_sem=1, q_syn=1,
                                          q_lex=1, max_length=256):  # todo: tune q values
@@ -84,60 +102,106 @@ def transform_data_with_qualitypredictor(dataset, qpmodel, predict_with_qp, q_se
     labels = torch.stack(labels)
 
     dataset = TensorDataset(input_ids, attention_masks, labels)
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)  # Todo: Shuffle train dataset?
+    dataloader = DataLoader(dataset, batch_size=32, shuffle=False)  # Todo: Shuffle train dataset?
 
     return dataloader
 
 
-def train_model(model, train_data, val_data, device, tokenizer, patience=3): #todo: update this train function
-    """
-    Train the model. Return and save the best model.
-    https://huggingface.co/docs/transformers/en/training#train-in-native-pytorch #Todo: Put in references
-    """
+def train_model(model, train_data, val_data, device, tokenizer, learning_rate=hyperparams['learning_rate'], batch_size=hyperparams['batch_size'],
+                patience=hyperparams['patience'], print_messages=DEV_MODE, alpha_ngram=1e-2, alpha_diversity=1e-2):
+    accumulation_steps = int(batch_size / 32)
     if not DEV_MODE:
         torch.cuda.empty_cache()
 
-    num_epochs = 50 if not DEV_MODE else 10
-    num_training_steps = num_epochs * len(train_data)
-    progress_bar = tqdm(range(num_training_steps))
+    num_epochs = 100 if not DEV_MODE else 10
+    num_training_steps = num_epochs * len(train_data) // accumulation_steps
+    progress_bar = tqdm(range(num_training_steps), disable=TQDM_DISABLE)
 
-    optimizer = AdamW(model.parameters(), lr=5e-5)
-    # optimizer = SophiaG(model.parameters(), lr=2e-4, betas=(0.965, 0.99), rho = 0.01, weight_decay=1e-1)
+    optimizer = AdamW(model.parameters(), lr=learning_rate)
+    #optimizer = hyperparams['optimizer'] #Todo: After hyperparameter search, use this
+    scaler = GradScaler()
 
     bleu_scores = []
     best_bleu_score = -10
+    best_epoch = 0
     epochs_without_improvement = 0
+
+    # Start timing
+    total_start_time = time.time()
 
     model.train()
     for epoch in range(num_epochs):
-        for batch in train_data:
-            input_ids, attention_mask, labels = [tensor.to(device) for tensor in batch]
-            outputs = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
-            loss = outputs.loss
-            loss.backward()
-            optimizer.step()
-            optimizer.zero_grad()
-            progress_bar.update(1)
+        epoch_start_time = time.time()  # Start time for this epoch
+
+        optimizer.zero_grad()
+        for i, batch in enumerate(train_data):
+            input_ids, attention_mask, labels = [tensor.to(device, non_blocking=True) for tensor in batch]
+            with autocast():
+                outputs = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
+                loss = outputs.loss / accumulation_steps
+
+                # Compute the n-gram penalty
+                with torch.no_grad():
+                    predictions = model.generate(
+                        input_ids,
+                        attention_mask=attention_mask,
+                        max_length=50,
+                        num_beams=5,
+                        early_stopping=True,
+                    )
+                    #if alpha_ngram != 0 or alpha_diversity != 0:
+                     #   penalty = alpha_ngram * ngram_penalty(predictions) + alpha_diversity * diversity_penalty(
+                      #  predictions)
+                       # loss = loss + penalty
+
+            scaler.scale(loss).backward()
+
+            if (i + 1) % accumulation_steps == 0:
+                scaler.step(optimizer)
+                scaler.update()
+                optimizer.zero_grad()
+                progress_bar.update(1)
+
+        # End time for this epoch
+        epoch_end_time = time.time()
+        epoch_duration = epoch_end_time - epoch_start_time
+        if print_messages:
+            print(f"Epoch {epoch + 1}/{num_epochs} completed in {epoch_duration:.2f} seconds.")
 
         if val_data is not None:
-            scores = evaluate_model(model, val_data, device, tokenizer)
+            scores = evaluate_model(model, val_data, device, tokenizer, print_messages=print_messages)
             b = scores['bleu_score']
             bleu_scores.append(b)
 
-            # Save the best model
             if b > best_bleu_score:
                 best_bleu_score = scores['bleu_score']
                 best_epoch = epoch + 1
                 epochs_without_improvement = 0
+                # Save the best model
+                torch.save(model.state_dict(), model_save_path)
             else:
                 epochs_without_improvement += 1
 
-            # Early stopping
             if epochs_without_improvement >= patience:
-                print(f"Early stopping triggered after {epoch + 1} epochs. \n")
-                print(f'Best BLEU score: {best_bleu_score} at epoch {best_epoch}. \n')
-                print(f"History: {bleu_scores}")
+                if print_messages:
+                    print(f"Early stopping triggered after {epoch + 1} epochs. \n")
+                    print(f'Best BLEU score: {best_bleu_score} at epoch {best_epoch}. \n')
+                    print(f"History: {bleu_scores}")
                 break
+
+    # End total timing
+    total_end_time = time.time()
+    total_training_time = total_end_time - total_start_time
+    if print_messages:
+        print(f"Total training time: {total_training_time:.2f} seconds.")
+
+    # Load the best model before returning
+    del model
+    torch.cuda.empty_cache()
+    model = BartForConditionalGeneration.from_pretrained("facebook/bart-large",
+                                                         local_files_only=True)
+    model.load_state_dict(torch.load(model_save_path))
+    model = model.to(device)
     return model
 
 
@@ -261,7 +325,9 @@ def finetune_paraphrase_generation(args):
     df_train_data_qp = qp_model.load_etpc_paraphrase(bleurt_model, bleurt_tokenizer)
 
     qpmodel = qp_model.QualityPredictor()
-    qp_model.train_quality_predictor(qpmodel, df_train_data_qp, num_epochs= 6 if not DEV_MODE else 1)  # Todo: find out best num epochs
+
+    print('Training quality predictor')
+    qpmodel = qp_model.train_quality_predictor(qpmodel, df_train_data_qp, num_epochs= 6 if not DEV_MODE else 1)  # Todo: find out best num epochs
 
     train_dataset = pd.read_csv("data/etpc-paraphrase-train.csv", sep="\t")
     train_dataset = train_dataset if not DEV_MODE else train_dataset[:10]
@@ -289,7 +355,8 @@ def finetune_paraphrase_generation(args):
     scores_before_training = evaluate_model(model, val_data, device, tokenizer)
     bleu_score_before_training, meteor_score_before_training = scores_before_training.values()
 
-    model = train_model(model, train_data, val_data, device, tokenizer, patience=3)
+    #Todo: put back
+    model = train_model(model, train_data, val_data, device, tokenizer)
 
     print("Training finished.")
 

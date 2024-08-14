@@ -22,8 +22,6 @@ if local_hostname == 'Corinna-PC' or local_hostname == "TABLET-TTS0K9R0": #Todo:
 
 TQDM_DISABLE = not DEV_MODE
 
-batch_size = 64 if not DEV_MODE else 1
-
 warnings.filterwarnings("ignore", category=FutureWarning)
 
 
@@ -116,9 +114,8 @@ def prepare_data(df):
 
 def train_quality_predictor(qpmodel, df_data, num_epochs):
     train_dataset = prepare_data(df_data) #todo: Add the datasets from the paper!?
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True) #todo: change batch size
 
-    print("Training Quality predictor \n")
     qpmodel.train()
 
     qp_optimizer = AdamW(qpmodel.parameters(), lr=5e-5) #todo: find optimal learning rate
