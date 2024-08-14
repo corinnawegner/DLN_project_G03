@@ -425,7 +425,6 @@ if __name__ == "__main__":
     args = get_args()
     seed_everything(args.seed)
     finetune_paraphrase_generation(args)
-    finetune_paraphrase_generation(args)
     # Delete the saved model file
     if os.path.exists(model_save_path):
         os.remove(model_save_path)
