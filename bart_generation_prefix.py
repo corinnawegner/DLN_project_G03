@@ -41,7 +41,7 @@ model_save_path = f"models/bart_generation_prefix_{r}.pt"
 
 hyperparams = {
     'optimizer': AdamW,
-    'learning_rate': 1e-3,
+    'learning_rate': 1e-2,
     'batch_size': 64,
     'dropout_rate': 0.0,
     'patience': 3,
