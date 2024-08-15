@@ -1,7 +1,7 @@
 from collections import Counter
 from nltk import ngrams
 
-def ngram_penalty(pred_texts, input_texts, n=3):
+def ngram_penalty(pred_texts, input_texts, n=4):
     """
     Compute the n-gram penalty for a batch of predictions compared to inputs.
     Penalizes n-grams that are present in both input and prediction texts.
