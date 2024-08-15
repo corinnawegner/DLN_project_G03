@@ -8,7 +8,7 @@ from sacrebleu.metrics import BLEU
 from torch.utils.data import DataLoader, TensorDataset
 from tqdm import tqdm
 from transformers import AutoTokenizer, BartForConditionalGeneration, BartConfig
-from optimizer import AdamW
+from optimizer import AdamW, EAdam
 from torch.cuda.amp import autocast, GradScaler
 from penalty_function import ngram_penalty, diversity_penalty#, length_penalty
 import time
@@ -37,9 +37,9 @@ model_save_path = f"models/bart_generation_earlystopping_{r}.pt"
 
 hyperparams = {
     'optimizer': AdamW,
-    'learning_rate': [1e-5, 5e-5, 8e-5, 1e-4, 1e-6],
-    'batch_size': [128, 64, 32],
-    'dropout_rate': [0.3, 0.0],
+    'learning_rate': 1e-5,
+    'batch_size': 64,
+    'dropout_rate': 0.1,
     'patience': 3,
     'num_epochs': 100 if not DEV_MODE else 10,
     'alpha': 1e-2,
@@ -100,19 +100,18 @@ def transform_data(dataset, max_length=256):
     return dataloader
 
 
-
-def train_model(model, train_data, val_data, device, tokenizer, learning_rate=hyperparams['learning_rate'], batch_size=hyperparams['batch_size'],
+def train_model(model, train_data, val_data, device, tokenizer, learning_rate=hyperparams['learning_rate'],
+                batch_size=hyperparams['batch_size'],
                 patience=hyperparams['patience'], print_messages=DEV_MODE, alpha_ngram=1e-2, alpha_diversity=1e-2):
     accumulation_steps = int(batch_size / 32)
     if not DEV_MODE:
         torch.cuda.empty_cache()
 
-    num_epochs = 100 if not DEV_MODE else 10
+    num_epochs = 100 if not DEV_MODE else 5
     num_training_steps = num_epochs * len(train_data) // accumulation_steps
     progress_bar = tqdm(range(num_training_steps), disable=TQDM_DISABLE)
 
     optimizer = AdamW(model.parameters(), lr=learning_rate)
-    #optimizer = hyperparams['optimizer'] #Todo: After hyperparameter search, use this
     scaler = GradScaler()
 
     bleu_scores = []
@@ -134,19 +133,33 @@ def train_model(model, train_data, val_data, device, tokenizer, learning_rate=hy
                 outputs = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
                 loss = outputs.loss / accumulation_steps
 
+                # Generate paraphrases
+                predictions = model.generate(
+                    input_ids,
+                    attention_mask=attention_mask,
+                    max_length=50,
+                    num_beams=5,
+                    early_stopping=True,
+                )
+
+                # Convert predictions to tensors if they are not already
+                if isinstance(predictions, list):
+                    predictions = torch.tensor(predictions, device=device)
+
                 # Compute the n-gram penalty
-                with torch.no_grad():
-                    predictions = model.generate(
-                        input_ids,
-                        attention_mask=attention_mask,
-                        max_length=50,
-                        num_beams=5,
-                        early_stopping=True,
-                    )
-                    if alpha_ngram != 0 or alpha_diversity != 0:
-                        penalty = alpha_ngram * ngram_penalty(predictions) + alpha_diversity * diversity_penalty(
-                        predictions)
-                        loss = loss + penalty
+                if alpha_ngram != 0 or alpha_diversity != 0:
+                    # Decode predictions and inputs for penalty computation
+                    pred_texts = tokenizer.batch_decode(predictions, skip_special_tokens=True)
+                    input_texts = tokenizer.batch_decode(input_ids, skip_special_tokens=True)
+
+                    print("pred text",pred_texts)
+                    print("input text:", input_texts)
+
+                    # Compute penalties
+                    penalty = alpha_ngram * ngram_penalty(pred_texts, input_texts) + alpha_diversity * diversity_penalty(
+                        pred_texts, input_texts)
+                    print(penalty)
+                    loss = loss + penalty
 
             scaler.scale(loss).backward()
 
@@ -360,49 +373,22 @@ def finetune_paraphrase_generation(args):
 
     print(f"Loaded {len(train_dataset)} training samples.")
 
-    best_bleu = 0
-    best_lr = 0
-    best_dropout = 42
-    best_batchsize = 0
+    model = BartForConditionalGeneration.from_pretrained("facebook/bart-large",
+                                                         local_files_only=True)
+    model.to(device)
+    if DEV_MODE:
+        scores_before_training = evaluate_model(model, val_data, device, tokenizer)
+        bleu_score_before_training, _ = scores_before_training.values()
+    model = train_model(model, train_data, val_data, device, tokenizer, learning_rate=hyperparams['learning_rate'], batch_size=hyperparams['batch_size'], patience=hyperparams['patience'], print_messages=True, alpha_ngram=1e-2, alpha_diversity=1e-2) #todo: set print_messages to DEV_MODE again
+    scores = evaluate_model(model, val_data, device, tokenizer)
+    bleu_score, _ = scores.values()
+    print(f"The penalized BLEU-score of the model is: {bleu_score:.3f}")
 
-
-
-#    hyperparameter_grid = {
- #       'learning_rate': [1e-5],# 5e-5, 8e-5, 1e-4, 1e-6],
-  #      'batch_size': [64],
-   #     'dropout_rate': [0.0]#, 0.1, 0.0]
-    #}
-
-    for b in hyperparameter_grid['batch_size']:
-        for dropout in hyperparameter_grid['dropout_rate']:
-            for lr in hyperparameter_grid['learning_rate']:
-                config = BartConfig.from_pretrained("facebook/bart-large")
-                config.activation_dropout = dropout
-                config.attention_dropout = dropout
-                config.dropout = dropout
-                model = BartForConditionalGeneration.from_pretrained("facebook/bart-large", config=config,
-                                                                     local_files_only=True)
-                model.to(device)
-                if DEV_MODE:
-                    scores_before_training = evaluate_model(model, val_data, device, tokenizer)
-                    bleu_score_before_training, _ = scores_before_training.values()
-                model = train_model(model, train_data, val_data, device, tokenizer, learning_rate=lr, batch_size=b, patience=hyperparams['patience'], print_messages=True, alpha_ngram=0.0, alpha_diversity=0.0) #todo: set print_messages to DEV_MODE again
-                scores = evaluate_model(model, val_data, device, tokenizer)
-                bleu_score, _ = scores.values()
-                print(f"Results for learning rate {lr}, batch_size: {b}, dropout rate: {dropout}:")
-                print(f"The penalized BLEU-score of the model is: {bleu_score:.3f}")
-                print("\n")
-                #print(f"The METEOR-score of the model is: {meteor_score:.3f}")
-                #print(f"Without training: \n BLEU: {bleu_score_before_training:.3f}")# \n METEOR: {meteor_score_before_training}")
-                if bleu_score > best_bleu:
-                    best_bleu = bleu_score
-                    best_lr = lr
-                    best_batchsize = b
-                    best_dropout = dropout
-                # Clear GPU memory
-                #del model #todo: put back
-                #torch.cuda.empty_cache() #Todo: will it also delete the best parameters? and put it back
-    print(f"Best params: \n LR: {best_lr} \n batch size: {best_batchsize} \n dropout: {best_dropout}. Best BLEU: {best_bleu}.")
+    #print(f"The METEOR-score of the model is: {meteor_score:.3f}")
+    #print(f"Without training: \n BLEU: {bleu_score_before_training:.3f}")# \n METEOR: {meteor_score_before_training}")
+    # Clear GPU memory
+    #del model
+    #torch.cuda.empty_cache()
 
     #paraphrases = generate_paraphrases(model, val_data, device, tokenizer)
     #paraphrases.to_csv("predictions/bart/generation_predict.csv", index=False, sep="\t")
