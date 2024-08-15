@@ -365,13 +365,7 @@ def finetune_paraphrase_generation(args):
     best_dropout = 42
     best_batchsize = 0
 
-    hyperparameter_grid = {
-        'learning_rate': [1e-5, 5e-5, 8e-5, 1e-4, 1e-6],
-        'batch_size': [128, 64, 32],  #, 128], This gives memory issues
-        'dropout_rate': [0.3, 0.1, 0.0]
-        #'activation_function': ['gelu', 'relu']
 
-    }
 
 #    hyperparameter_grid = {
  #       'learning_rate': [1e-5],# 5e-5, 8e-5, 1e-4, 1e-6],
