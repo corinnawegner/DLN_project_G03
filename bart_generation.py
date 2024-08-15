@@ -15,6 +15,7 @@ import time
 import warnings
 import socket
 import os
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 #import nltk
 #nltk.download('wordnet')
 
@@ -112,6 +113,7 @@ def train_model(model, train_data, val_data, device, tokenizer, learning_rate=hy
     progress_bar = tqdm(range(num_training_steps), disable=TQDM_DISABLE)
 
     optimizer = AdamW(model.parameters(), lr=learning_rate)
+    scheduler = ReduceLROnPlateau(optimizer, factor=0.1, patience=patience)
     scaler = GradScaler()
 
     bleu_scores = []
@@ -167,6 +169,7 @@ def train_model(model, train_data, val_data, device, tokenizer, learning_rate=hy
                 scaler.step(optimizer)
                 scaler.update()
                 optimizer.zero_grad()
+                scheduler.step()
                 progress_bar.update(1)
 
         # End time for this epoch
@@ -387,7 +390,7 @@ def finetune_paraphrase_generation(args):
     best_bleu = 0
     best_alpha_ngram = None
     best_alpha_diversity = None
-    
+
     for alpha in list_alpha_ngram:
         for diversity in list_alpha_diversity:
             print(f"alpha: {alpha}, diversity: {diversity}")
@@ -400,8 +403,6 @@ def finetune_paraphrase_generation(args):
                 best_alpha_ngram = alpha
                 best_alpha_diversity = diversity
     print(f"Best BLEU: {best_bleu},The best alpha ngram: {best_alpha_ngram}, Best alpha diversity: {best_alpha_diversity}")
-
-
 
     #print(f"The METEOR-score of the model is: {meteor_score:.3f}")
     #print(f"Without training: \n BLEU: {bleu_score_before_training:.3f}")# \n METEOR: {meteor_score_before_training}")
