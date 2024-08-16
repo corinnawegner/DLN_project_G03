@@ -2,6 +2,7 @@ import argparse
 import random
 import numpy as np
 import pandas as pd
+import spacy
 import torch
 from sacrebleu.metrics import BLEU
 #from nltk.translate.meteor_score import single_meteor_score
@@ -42,21 +43,26 @@ hyperparams = {
     'dropout_rate': 0.1,
     'patience': 3,
     'num_epochs': 100 if not DEV_MODE else 10,
-    'alpha': 1e-2,
+    'alpha': 0.0,
     'scheduler': None,
+    'POS_NER_tagging': False
 }  # Todo: make every function take values from here
 
+if hyperparams['POS_NER_tagging'] == True:
+    nlp = spacy.load("en_core_web_sm")
 
-def transform_data(dataset, max_length=256):
+def perform_pos_ner(text):
     """
-    Turn the data to the format you want to use.
-    Use AutoTokenizer to obtain encoding (input_ids and attention_mask).
-    Tokenize the sentence pair in the following format:
-    sentence_1 + SEP + sentence_1 segment location + SEP + paraphrase types.
-    Return Data Loader.
+    Perform POS tagging and NER on the given text.
     """
+    doc = nlp(text)
+    pos_tags = [(token.text, token.pos_) for token in doc]
+    entities = [(ent.text, ent.label_) for ent in doc.ents]
+    return pos_tags, entities
+
+
+def transform_data(dataset, max_length=256, use_tagging = hyperparams['POS_NER_tagging']):
     tokenizer = AutoTokenizer.from_pretrained("facebook/bart-large")
-
     input_ids = []
     attention_masks = []
     labels = []
@@ -65,7 +71,20 @@ def transform_data(dataset, max_length=256):
         sentence_1 = row['sentence1']
         segment_location_1 = row['sentence1_segment_location']
         paraphrase_type = row['paraphrase_types']
-        combined_input = f"{sentence_1} [SEP] {segment_location_1} [SEP] {paraphrase_type}"
+
+        # Perform POS and NER tagging
+        if use_tagging == True:
+            pos_tags, entities = perform_pos_ner(sentence_1)
+
+            # Convert POS tags and entities to string format
+            pos_tags_str = ' '.join([f"{token}/{tag}" for token, tag in pos_tags])
+            entities_str = ' '.join([f"{ent}/{label}" for ent, label in entities])
+
+            # Combine the original sentence with POS and NER information
+            combined_input = f"{sentence_1} [SEP] {segment_location_1} [SEP] {paraphrase_type} [SEP] POS: {pos_tags_str} [SEP] NER: {entities_str}"
+        else:
+            combined_input = f"{sentence_1} [SEP] {segment_location_1} [SEP] {paraphrase_type}"
+
 
         encoding = tokenizer(
             combined_input,
@@ -96,7 +115,7 @@ def transform_data(dataset, max_length=256):
     labels = torch.stack(labels)
 
     dataset = TensorDataset(input_ids, attention_masks, labels)
-    dataloader = DataLoader(dataset, batch_size=32, shuffle=False) #Todo: Shuffle train dataset? I think I do this when loading the dataset
+    dataloader = DataLoader(dataset, batch_size=32, shuffle=False)
 
     return dataloader
 
@@ -172,9 +191,6 @@ def train_model(model, train_data, val_data, device, tokenizer, learning_rate=hy
                     # Decode predictions and inputs for penalty computation
                     pred_texts = tokenizer.batch_decode(predictions, skip_special_tokens=True)
                     input_texts = tokenizer.batch_decode(input_ids, skip_special_tokens=True)
-
-                    print("pred text",pred_texts)
-                    print("input text:", input_texts)
 
                     # Compute penalties
                     penalty = alpha_ngram * ngram_penalty(pred_texts, input_texts) + alpha_diversity * diversity_penalty(
@@ -402,6 +418,7 @@ def finetune_paraphrase_generation(args):
 
     list_alpha_ngram = [100, 20, 10, 1, 0.1]
     list_alpha_diversity = [100,20,10,1, 0.1]
+    list_scheduler = ['ReduceLROnPlateau', 'CosineAnnealingLR', 'OneCycleLR', 'MultiStepLR']
 
     best_bleu = 0
     best_alpha_ngram = None
@@ -410,22 +427,24 @@ def finetune_paraphrase_generation(args):
     for alpha in list_alpha_ngram:
         for diversity in list_alpha_diversity:
             print(f"alpha: {alpha}, diversity: {diversity}")
-            model = BartForConditionalGeneration.from_pretrained("facebook/bart-large",
-                                                                 local_files_only=True)
+            model = BartForConditionalGeneration.from_pretrained("facebook/bart-large", local_files_only=True)
             model.to(device)
-            model = train_model(model, train_data, val_data, device, tokenizer, learning_rate=hyperparams['learning_rate'], batch_size=hyperparams['batch_size'], patience=hyperparams['patience'], print_messages=True, alpha_ngram=alpha, alpha_diversity=diversity) #todo: set print_messages to DEV_MODE again
+            model = train_model(model, train_data, val_data, device, tokenizer,
+                                learning_rate=hyperparams['learning_rate'], batch_size=hyperparams['batch_size'],
+                                patience=hyperparams['patience'], print_messages=True, alpha_ngram=alpha,
+                                alpha_diversity=diversity)  # todo: set print_messages to DEV_MODE again
             scores = evaluate_model(model, val_data, device, tokenizer)
-            print(f"The penalized BLEU-score of the model is: {bleu_score:.3f}")
             bleu_score, _ = scores.values()
+            print(f"The penalized BLEU-score of the model is: {bleu_score:.3f}")
             if bleu_score > best_bleu:
                 best_bleu = bleu_score
                 best_alpha_ngram = alpha
                 best_alpha_diversity = diversity
-            del model
-    print(f"Best BLEU: {best_bleu},The best alpha ngram: {best_alpha_ngram}, Best alpha diversity: {best_alpha_diversity}")
+    print(
+        f"Best BLEU: {best_bleu},The best alpha ngram: {best_alpha_ngram}, Best alpha diversity: {best_alpha_diversity}")
 
 
-    #print(f"The METEOR-score of the model is: {meteor_score:.3f}")
+#print(f"The METEOR-score of the model is: {meteor_score:.3f}")
     #print(f"Without training: \n BLEU: {bleu_score_before_training:.3f}")# \n METEOR: {meteor_score_before_training}")
     # Clear GPU memory
     #del model
