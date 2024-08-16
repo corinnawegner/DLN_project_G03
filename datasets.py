@@ -240,8 +240,10 @@ class SentencePairTestDataset(Dataset):
 
         return batched_data
 
+import csv
+import random
 
-def load_multitask_data(sst_filename, quora_filename, sts_filename, etpc_filename, split="train"):
+def load_multitask_data(sst_filename, quora_filename, sts_filename, etpc_filename, split="train", dev_mode=False):
     sst_data = []
     num_labels = {}
     if split == "test":
@@ -260,6 +262,9 @@ def load_multitask_data(sst_filename, quora_filename, sts_filename, etpc_filenam
                     num_labels[label] = len(num_labels)
                 sst_data.append((sent, label, sent_id))
 
+    if dev_mode:
+        sst_data = random.sample(sst_data, min(len(sst_data), 10))  # Use a subset for dev_mode
+
     print(f"Loaded {len(sst_data)} {split} examples from {sst_filename}")
 
     quora_data = []
@@ -274,7 +279,6 @@ def load_multitask_data(sst_filename, quora_filename, sts_filename, etpc_filenam
                         sent_id,
                     )
                 )
-
     else:
         with open(quora_filename, "r", encoding="utf-8") as fp:
             for record in csv.DictReader(fp, delimiter="\t"):
@@ -290,6 +294,9 @@ def load_multitask_data(sst_filename, quora_filename, sts_filename, etpc_filenam
                     )
                 except:
                     pass
+
+    if dev_mode:
+        quora_data = random.sample(quora_data, min(len(quora_data), 10))  # Use a subset for dev_mode
 
     print(f"Loaded {len(quora_data)} {split} examples from {quora_filename}")
 
@@ -318,6 +325,9 @@ def load_multitask_data(sst_filename, quora_filename, sts_filename, etpc_filenam
                     )
                 )
 
+    if dev_mode:
+        sts_data = random.sample(sts_data, min(len(sts_data), 10))  # Use a subset for dev_mode
+
     print(f"Loaded {len(sts_data)} {split} examples from {sts_filename}")
 
     etpc_data = []
@@ -332,7 +342,6 @@ def load_multitask_data(sst_filename, quora_filename, sts_filename, etpc_filenam
                         sent_id,
                     )
                 )
-
     else:
         with open(etpc_filename, "r", encoding="utf-8") as fp:
             for record in csv.DictReader(fp, delimiter="\t"):
@@ -348,6 +357,9 @@ def load_multitask_data(sst_filename, quora_filename, sts_filename, etpc_filenam
                     )
                 except:
                     pass
+
+    if dev_mode:
+        etpc_data = random.sample(etpc_data, min(len(etpc_data), 10))  # Use a subset for dev_mode
 
     print(f"Loaded {len(etpc_data)} {split} examples from {etpc_filename}")
 

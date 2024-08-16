@@ -142,7 +142,7 @@ def model_eval_multitask(
         etpc_sent_ids = []
 
         # Evaluate paraphrase type detection.
-        if task == "etpc" or task == "multitask":
+        if task == "etpc" or task == "multitask": # Todo: 7.2.2. (multitask) does not include etpc
             for step, batch in enumerate(tqdm(etpc_dataloader, desc="eval", disable=TQDM_DISABLE)):
                 (b_ids1, b_mask1, b_ids2, b_mask2, b_labels, b_sent_ids) = (
                     batch["token_ids_1"],
@@ -166,12 +166,12 @@ def model_eval_multitask(
                 etpc_y_true.extend(b_labels)
                 etpc_sent_ids.extend(b_sent_ids)
 
-        if task == "etpc" or task == "multitask":
+        if task == "etpc" or task == "multitask": # Todo: 7.2.2. (multitask) does not include etpc
             correct_pred = np.all(np.array(etpc_y_pred) == np.array(etpc_y_true), axis=1).astype(
                 int
             )
             etpc_accuracy = np.mean(correct_pred)
-            etpc_y_pred = etpc_y_pred.tolist()
+            etpc_y_pred = etpc_y_pred#.tolist()
         else:
             etpc_accuracy = None
 
@@ -181,7 +181,7 @@ def model_eval_multitask(
             print(f"Sentiment classification accuracy: {sst_accuracy:.3f}")
         if task == "sts" or task == "multitask":
             print(f"Semantic Textual Similarity correlation: {sts_corr:.3f}")
-        if task == "etpc" or task == "multitask":
+        if task == "etpc" or task == "multitask": #Todo: 7.2.2. (multitask) does not include etpc
             print(f"Paraphrase Type detection accuracy: {etpc_accuracy:.3f}")
 
     model.train()  # switch back to train model
@@ -314,13 +314,13 @@ def model_eval_test_multitask(
         )
 
 
-def test_model_multitask(args, model, device):
+def test_model_multitask(args, model, device, dev_mode = False):
     sst_test_data, _, quora_test_data, sts_test_data, etpc_test_data = load_multitask_data(
-        args.sst_test, args.quora_test, args.sts_test, args.etpc_test, split="test"
+        args.sst_test, args.quora_test, args.sts_test, args.etpc_test, split="test", dev_mode=dev_mode
     )
 
     sst_dev_data, _, quora_dev_data, sts_dev_data, etpc_dev_data = load_multitask_data(
-        args.sst_dev, args.quora_dev, args.sts_dev, args.etpc_dev, split="dev"
+        args.sst_dev, args.quora_dev, args.sts_dev, args.etpc_dev, split="dev", dev_mode=dev_mode
     )
 
     sst_test_data = SentenceClassificationTestDataset(sst_test_data, args)

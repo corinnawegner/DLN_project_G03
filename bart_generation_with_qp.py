@@ -43,7 +43,7 @@ hyperparams = {
     'dropout_rate': 0.0,
     'patience': 3,
     'num_epochs': 100 if not DEV_MODE else 10,
-    'alpha': 1e-2,
+    'alpha': 0.0,
 }  # Todo: make every function take values from here
 
 def transform_data_with_qualitypredictor(dataset, qpmodel, predict_with_qp, q_sem=1, q_syn=1,
