@@ -6,14 +6,14 @@ import re
 import sys
 import time
 from types import SimpleNamespace
-
+import pandas as pd
 import numpy as np
 import torch
 import torch.nn.functional as F
 from torch import nn
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-
+import json
 from bert import BertModel
 from datasets import (
     SentenceClassificationDataset,
@@ -376,8 +376,8 @@ def train_multitask(args):
                     batch["labels"]
                 )
 
-                print(b_labels.shape)
-                print(logits.shape)
+                #print(b_labels.shape)
+               # print(logits.shape)
 
                 b_ids_1, b_ids_2 = b_ids_1.to(device), b_ids_2.to(device)
                 b_mask_1, b_mask_2 = b_mask_1.to(device), b_mask_2.to(device)
@@ -532,6 +532,22 @@ def get_args():
 
     return args
 
+    # Function to train and evaluate individual task models
+def train_and_evaluate_task_model(task):
+    print(f"Training and evaluating {task} model...")
+
+    args.task = task
+    args.filepath = f"models/{task}-{args.option}-{args.epochs}-{args.lr}.pt"
+    print(f'args.filepath = {args.filepath}')
+
+    # Train individual model
+    train_multitask(args)
+
+    # Test individual model
+    test_results = test_model(args)
+
+    return test_results
+
 
 if __name__ == "__main__":
 
@@ -556,5 +572,70 @@ if __name__ == "__main__":
     print(f'args.filepath = {args.filepath}')
 
     seed_everything(args.seed)  # fix the seed for reproducibility
+
+    # Create a directory to save results
+    results_dir = "results"
+    os.makedirs(results_dir, exist_ok=True)
+
+    # Dictionary to store results
+    task_results = {}
+
+    # Train and evaluate models for each individual task
+    for task in ["sst", "sts", "qqp"]:
+        task_results[task] = train_and_evaluate_task_model(task)
+
+    # Train and evaluate multitask model
+    args.task = "multitask"
+    args.filepath = f"models/multitask-{args.option}-{args.epochs}-{args.lr}.pt"
+    print(f'args.filepath = {args.filepath}')
     train_multitask(args)
-    test_model(args)
+    multitask_results = test_model(args)
+
+    # Save results to JSON file
+    results_file = os.path.join(results_dir, "results.json")
+    with open(results_file, "w") as f:
+        json.dump({
+            "task_results": task_results,
+            "multitask_results": multitask_results
+        }, f, indent=4)
+
+    # Optionally save detailed results as CSV files if needed
+    # Example assuming test_model returns a DataFrame for each task
+    for task, results in task_results.items():
+        if isinstance(results, pd.DataFrame):
+            results.to_csv(os.path.join(results_dir, f"{task}_results.csv"), index=False)
+
+    # Save multitask results separately if needed
+    if isinstance(multitask_results, pd.DataFrame):
+        multitask_results.to_csv(os.path.join(results_dir, "multitask_results.csv"), index=False)
+
+    # Print the results
+    print("\nPerformance Comparison:")
+    print("-" * 30)
+    for task, results in task_results.items():
+        print(f"Task: {task}")
+        # Print the results for each individual task model
+        print(f"Results: {results}")
+
+    print("\nMultitask Model Performance:")
+    print(f"Results: {multitask_results}")
+    print("-" * 30)
+
+"""
+7.2.2 Multitask classification
+ You will train one model combined on the three datasets: QQP, SST, and STS, to evaluate
+ multitask learning capabilities. Beyond training, implement an improvement that boosts
+ the model's multitask performance (average performance on all three tasks). Compare the
+ multitask model's performance against models trained on individual tasks to assess the
+ effectiveness of multitask learning. How does training on a different dataset influence the
+ model’s performance on another task? Make sure to discuss the obtained results. What are
+ the benefits/limitations of this approach? Do you identify any trends?
+ To start, try using the multitask argument already provided, but you may need to modify
+ your training loops.
+ You can systematically investigate how different training (e.g., train on one dataset after
+ another, shuffle all datasets together, and train the model simultaneously, etc) affects its
+ performance on all three tasks. Starting from those insights, you can come up with some
+ ideas of how to improve the multitask performance of the model. Furthermore, you could
+ use some ideas from the papers presented in 7.1. Implement at least one idea that leads to
+ an improvement in the multitask performance
+"""
