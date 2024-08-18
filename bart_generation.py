@@ -1,3 +1,6 @@
+#import nltk
+#nltk.download('wordnet')
+
 import argparse
 import random
 import numpy as np
@@ -11,14 +14,15 @@ from tqdm import tqdm
 from transformers import AutoTokenizer, BartForConditionalGeneration
 from optimizer import AdamW
 from torch.cuda.amp import autocast, GradScaler
-from penalty_function import ngram_penalty, diversity_penalty
+#from penalty_function import ngram_penalty, diversity_penalty
 import time
 import warnings
 import socket
 import os
 from torch.optim.lr_scheduler import ReduceLROnPlateau, CosineAnnealingLR, OneCycleLR, MultiStepLR
-#import nltk
-#nltk.download('wordnet')
+from adjacency_matrix_from_dependence_tree import adjacency_matrix
+from bart_with_gcn import BartWithGCN, train_gcn_bart_model, transform_data_gcn, finetune_paraphrase_generation_gcn, evaluate_model_gcn
+from gcn import GraphConvolution
 
 try:
     local_hostname = socket.gethostname()
@@ -26,7 +30,7 @@ except:
     local_hostname = None
 
 DEV_MODE = False
-if local_hostname == 'Corinna-PC' or local_hostname == "TABLET-TTS0K9R0": #Todo: Add also laptop
+if local_hostname in ['Corinna-PC', "TABLET-TTS0K9R0", "DESKTOP-3D9LKBO"]:
     DEV_MODE = True
 
 TQDM_DISABLE = not DEV_MODE
@@ -464,7 +468,7 @@ def finetune_paraphrase_generation(args):
 if __name__ == "__main__":
     args = get_args()
     seed_everything(args.seed)
-    finetune_paraphrase_generation(args)
+    finetune_paraphrase_generation_gcn(args)
     # Delete the saved model file
     if os.path.exists(model_save_path):
         os.remove(model_save_path)
