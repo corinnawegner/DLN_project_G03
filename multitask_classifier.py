@@ -563,9 +563,10 @@ if __name__ == "__main__":
     # Determine DEV_MODE based on command-line argument or hostname
     if local_hostname in dev_hostnames:
         args.dev_mode = True
+    args.dev_mode = False
 
     # Set TQDM_DISABLE based on the value of DEV_MODE
-    TQDM_DISABLE = not args.dev_mode
+    TQDM_DISABLE = False# not args.dev_mode
 
     # Set the filepath argument
     args.filepath = f"models/{args.option}-{args.epochs}-{args.lr}-{args.task}.pt"  # save path

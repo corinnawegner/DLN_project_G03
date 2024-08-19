@@ -1,6 +1,6 @@
 #!/bin/bash -l
 #SBATCH --job-name=train-bart-generation
-#SBATCH -t 03:00:00                  # estimated time # TODO: adapt to your needs
+#SBATCH -t 10:00:00                  # estimated time # TODO: adapt to your needs
 #SBATCH -p grete                     # the partition you are training on (i.e., which nodes), for nodes see sinfo -p grete:shared --format=%N,%G
 #SBATCH -G A100:1                    # take 1 GPU, see https://docs.hpc.gwdg.de/compute_partitions/gpu_partitions/index.html for more options
 #SBATCH --mem-per-gpu=8G             # setting the right constraints for the splitted gpu partitions
@@ -14,9 +14,8 @@
 
 #module load anaconda3
 #source activate dnlp # Or whatever you called your environment.
+pip install --user spacy
 
-#pip install --user bleurt-pytorch   # Use --user to install in your home directory
-#pip install --user nltk
 
 # Printing out some info.
 echo "Submitting job with sbatch from directory: ${SLURM_SUBMIT_DIR}"
@@ -27,6 +26,8 @@ echo "Current node: ${SLURM_NODELIST}"
 # For debugging purposes.
 python --version
 python -m torch.utils.collect_env 2> /dev/null
+python -m spacy download en_core_web_sm
+
 
 # Print out some git info.
 module load git
@@ -35,7 +36,7 @@ echo "Latest Commit: $(git rev-parse --short HEAD)"
 echo -e "Uncommitted Changes: $(git status --porcelain | wc -l)\n"
 
 # Run the script:
-#python -u bart_generation_with_qp.py --use_gpu --local_files_only --option finetune --task sst --hidden_dropout_prob 0.1
-srun python -u bart_generation_with_qp.py --use_gpu
-#srun python multitask_classifier.py --use_gpu --option finetune --task qqp
+#python -u bart_generation.py --use_gpu --local_files_only --option finetune --task sst --hidden_dropout_prob 0.1
+#srun python -u bart_generation.py --use_gpu
+srun python multitask_classifier.py --use_gpu --option finetune
 
