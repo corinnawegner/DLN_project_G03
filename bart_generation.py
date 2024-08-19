@@ -16,7 +16,8 @@ import time
 import warnings
 import socket
 import os
-from torch.optim.lr_scheduler import ReduceLROnPlateau, CosineAnnealingLR, OneCycleLR, MultiStepLR
+from torch.optim.lr_scheduler import ReduceLROnPlateau
+
 #import nltk
 #nltk.download('wordnet')
 
@@ -205,7 +206,7 @@ def train_model(model, train_data, val_data, device, tokenizer, learning_rate=hy
                 scaler.update()
                 optimizer.zero_grad()
                 if use_scheduler is not None:
-                    scheduler.step()
+                    scheduler.step(loss)
                 progress_bar.update(1)
 
         # End time for this epoch
@@ -417,15 +418,17 @@ def finetune_paraphrase_generation(args):
       #  bleu_score_before_training, _ = scores_before_training.values()
 
 
-    model = BartForConditionalGeneration.from_pretrained("facebook/bart-large", local_files_only=True)
+    model = BartForConditionalGeneration.from_pretrained("facebook/bart-large",
+                                                         local_files_only=True)
     model.to(device)
     model = train_model(model, train_data, val_data, device, tokenizer,
                         learning_rate=hyperparams['learning_rate'], batch_size=hyperparams['batch_size'],
-                        patience=hyperparams['patience'], print_messages=True, alpha_ngram=0.0,
-                        alpha_diversity=0.0)  # todo: set print_messages to DEV_MODE again
+                        patience=hyperparams['patience'], print_messages=True, alpha_ngram=hyperparams["alpha"],
+                        alpha_diversity=hyperparams["alpha"])  # todo: set print_messages to DEV_MODE again
     scores = evaluate_model(model, val_data, device, tokenizer)
     bleu_score, _ = scores.values()
     print(f"The penalized BLEU-score of the model is: {bleu_score:.3f}")
+    del model
 
 
 
