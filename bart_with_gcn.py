@@ -47,6 +47,37 @@ hyperparams = {
 
 r = random.randint(10000, 99999)
 
+from transformers.modeling_outputs import BaseModelOutput
+
+class CustomEncoderOutput(BaseModelOutput):
+    def __init__(self, last_hidden_state, **kwargs):
+        super().__init__(last_hidden_state=last_hidden_state, **kwargs)
+
+def generate(self, input_ids, attention_mask, adj_matrices, **kwargs):
+    # Pass inputs through BART's encoder
+    encoder_outputs = self.bart_model.model.encoder(
+        input_ids=input_ids,
+        attention_mask=attention_mask
+    )
+
+    # Apply the GCN layer to the encoder's output
+    gcn_output = self.gcn_layer(encoder_outputs.last_hidden_state, adj_matrices)
+
+    # Wrap the GCN output in a suitable format
+    # Note: Ensure gcn_output is correctly formatted
+    encoder_outputs = CustomEncoderOutput(last_hidden_state=gcn_output)
+
+    # Generate using BART's decoder with the GCN-enhanced encoder output
+    generated_ids = self.bart_model.generate(
+        input_ids=input_ids,
+        attention_mask=attention_mask,
+        encoder_outputs=encoder_outputs,  # Pass the wrapped encoder outputs
+        **kwargs
+    )
+
+    return generated_ids
+
+
 class BartWithGCN(torch.nn.Module):
     def __init__(self, bart_model, gcn_layer):
         super(BartWithGCN, self).__init__()
@@ -80,23 +111,17 @@ class BartWithGCN(torch.nn.Module):
             attention_mask=attention_mask
         )
 
-        # Ensure encoder_outputs is in the expected format
-        if isinstance(encoder_outputs, tuple):
-            encoder_outputs = {'last_hidden_state': encoder_outputs[0]}
-        else:
-            encoder_outputs = encoder_outputs.to_dict()
-
         # Apply the GCN layer to the encoder's output
-        gcn_output = self.gcn_layer(encoder_outputs['last_hidden_state'], adj_matrices)
+        gcn_output = self.gcn_layer(encoder_outputs.last_hidden_state, adj_matrices)
 
-        # Update encoder_outputs with GCN-enhanced output
-        encoder_outputs['last_hidden_state'] = gcn_output
+        # Wrap the GCN output in a suitable format
+        encoder_outputs = CustomEncoderOutput(last_hidden_state=gcn_output)
 
         # Generate using BART's decoder with the GCN-enhanced encoder output
         generated_ids = self.bart_model.generate(
             input_ids=input_ids,
             attention_mask=attention_mask,
-            encoder_outputs=encoder_outputs,
+            encoder_outputs=encoder_outputs,  # Pass the wrapped encoder outputs
             **kwargs
         )
 
@@ -357,7 +382,7 @@ def evaluate_model_gcn(model, dataloader, device, tokenizer, print_messages=True
         A dictionary with BLEU score and optionally METEOR score.
     """
     model.eval()
-    bleu = BLEU
+    bleu = BLEU()
     predictions = []
     references = []
     inputs = []
@@ -365,6 +390,10 @@ def evaluate_model_gcn(model, dataloader, device, tokenizer, print_messages=True
     with torch.no_grad():
         for batch in tqdm(dataloader, desc="Evaluating", disable=not print_messages):
             input_ids, attention_mask, labels, adj_matrices = [tensor.to(device) for tensor in batch]
+
+            print(f"input_ids type: {input_ids.dtype}")
+            print(f"attention_mask type: {attention_mask.dtype}")
+            print(f"adj_matrices type: {adj_matrices.dtype}")
 
             # Generate paraphrases
             outputs = model.generate(
@@ -395,11 +424,13 @@ def evaluate_model_gcn(model, dataloader, device, tokenizer, print_messages=True
             inputs.extend(input_texts)
 
     # Compute BLEU scores
-    references = [[ref] for ref in references]  # BLEU expects a list of lists
-    bleu_score_reference = bleu(references, [predictions]).score
+    # BLEU score for references
+    bleu_score_reference = bleu.corpus_score(predictions, references).score
 
-    # Penalize BLEU score if it's too close to the input
-    bleu_score_inputs = 100 - bleu([[inp] for inp in inputs], [predictions]).score
+    # BLEU score for inputs
+    bleu_score_inputs = 100 - bleu.corpus_score(predictions, [[inp] for inp in inputs]).score
+
+    # Penalized BLEU score
     penalized_bleu = bleu_score_reference * bleu_score_inputs / 52
 
     if print_messages:
