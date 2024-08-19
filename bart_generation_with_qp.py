@@ -13,10 +13,13 @@ import warnings
 import socket
 from bleurt_pytorch import BleurtForSequenceClassification, BleurtTokenizer
 #from nltk.translate.meteor_score import single_meteor_score
-
 from torch.cuda.amp import autocast, GradScaler
 #from penalty_function import ngram_penalty, diversity_penalty#, length_penalty
 import time
+import spacy
+
+# Load SpaCy model for POS tagging and NER
+nlp = spacy.load("en_core_web_sm")
 
 try:
     local_hostname = socket.gethostname()
@@ -40,23 +43,28 @@ hyperparams = {
     'optimizer': AdamW,
     'learning_rate': 1e-5,
     'batch_size': 64,
-    'dropout_rate': 0.0,
+    'dropout_rate': 0.1,
     'patience': 3,
     'num_epochs': 100 if not DEV_MODE else 10,
-    'alpha': 1e-2,
-}  # Todo: make every function take values from here
+    'alpha': 0.0,
+    'scheduler': "CosineAnnealingLR",
+    'POS_NER_tagging': True  # Set to True to enable POS and NER tagging
+}
+
+
+def perform_pos_ner(text):
+    """
+    Perform POS tagging and NER on the given text.
+    """
+    doc = nlp(text)
+    pos_tags = [(token.text, token.pos_) for token in doc]
+    entities = [(ent.text, ent.label_) for ent in doc.ents]
+    return pos_tags, entities
+
 
 def transform_data_with_qualitypredictor(dataset, qpmodel, predict_with_qp, q_sem=1, q_syn=1,
-                                         q_lex=1, max_length=256):  # todo: tune q values
-    """
-    Turn the data to the format you want to use.
-    Use AutoTokenizer to obtain encoding (input_ids and attention_mask).
-    Tokenize the sentence pair in the following format:
-    sentence_1 + SEP + sentence_1 segment location + SEP + paraphrase types.
-    Return Data Loader.
-    """
+                                         q_lex=1, max_length=256, use_tagging=hyperparams['POS_NER_tagging']):
     tokenizer = AutoTokenizer.from_pretrained("facebook/bart-large")
-
     input_ids = []
     attention_masks = []
     labels = []
@@ -65,12 +73,24 @@ def transform_data_with_qualitypredictor(dataset, qpmodel, predict_with_qp, q_se
         sentence_1 = row['sentence1']
         segment_location_1 = row['sentence1_segment_location']
         paraphrase_type = row['paraphrase_types']
+
         if 'sentence2' in row and predict_with_qp == True:
             sentence_2 = row['sentence2']
             predictions = qp_model.predict_quality(qpmodel, [(sentence_1, sentence_2)])
         else:
             predictions = torch.tensor([[q_sem, q_syn, q_lex]])
-        combined_input = f"{sentence_1} [SEP] {segment_location_1} [SEP] {paraphrase_type} [SEP] {predictions}"
+
+        if use_tagging:
+            pos_tags, entities = perform_pos_ner(sentence_1)
+
+            # Convert POS tags and entities to string format
+            pos_tags_str = ' '.join([f"{token}/{tag}" for token, tag in pos_tags])
+            entities_str = ' '.join([f"{ent}/{label}" for ent, label in entities])
+
+            # Combine the original sentence with POS and NER information
+            combined_input = f"{sentence_1} [SEP] {segment_location_1} [SEP] {paraphrase_type} [SEP] POS: {pos_tags_str} [SEP] NER: {entities_str} [SEP] QP: {predictions}"
+        else:
+            combined_input = f"{sentence_1} [SEP] {segment_location_1} [SEP] {paraphrase_type} [SEP] {predictions}"
 
         encoding = tokenizer(
             combined_input,
@@ -101,9 +121,10 @@ def transform_data_with_qualitypredictor(dataset, qpmodel, predict_with_qp, q_se
     labels = torch.stack(labels)
 
     dataset = TensorDataset(input_ids, attention_masks, labels)
-    dataloader = DataLoader(dataset, batch_size=32, shuffle=False)  # Todo: Shuffle train dataset?
+    dataloader = DataLoader(dataset, batch_size=32, shuffle=False)
 
     return dataloader
+
 
 
 def train_model(model, train_data, val_data, device, tokenizer, learning_rate=hyperparams['learning_rate'], batch_size=hyperparams['batch_size'],
@@ -364,6 +385,8 @@ def finetune_paraphrase_generation(args):
     print(f"The penalized BLEU-score of the model is: {bleu_score:.3f}")
     # print(f"The METEOR-score of the model is: {meteor_score:.3f}")
     print(f"Without training: \n BLEU: {bleu_score_before_training:.3f}")  # \n METEOR: {meteor_score_before_training}")
+
+
 
     # Todo: Put back test if needed
     # test_ids = test_dataset["id"]
