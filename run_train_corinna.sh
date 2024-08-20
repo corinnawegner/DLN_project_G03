@@ -1,6 +1,6 @@
 #!/bin/bash -l
 #SBATCH --job-name=train-bart-generation
-#SBATCH -t 20:00:00                  # estimated time # TODO: adapt to your needs
+#SBATCH -t 04:00:00                  # estimated time # TODO: adapt to your needs
 #SBATCH -p grete                     # the partition you are training on (i.e., which nodes), for nodes see sinfo -p grete:shared --format=%N,%G
 #SBATCH -G A100:1                    # take 1 GPU, see https://docs.hpc.gwdg.de/compute_partitions/gpu_partitions/index.html for more options
 #SBATCH --mem-per-gpu=8G             # setting the right constraints for the splitted gpu partitions

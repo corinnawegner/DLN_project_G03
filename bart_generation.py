@@ -67,6 +67,8 @@ def transform_data(dataset, max_length=256, use_tagging = hyperparams['POS_NER_t
     attention_masks = []
     labels = []
 
+    SEP = tokenizer.sep_token
+
     for _, row in tqdm(dataset.iterrows(), total=len(dataset), disable=TQDM_DISABLE):
         sentence_1 = row['sentence1']
         segment_location_1 = row['sentence1_segment_location']
@@ -81,9 +83,9 @@ def transform_data(dataset, max_length=256, use_tagging = hyperparams['POS_NER_t
             entities_str = ' '.join([f"{ent}/{label}" for ent, label in entities])
 
             # Combine the original sentence with POS and NER information
-            combined_input = f"{sentence_1} [SEP] {segment_location_1} [SEP] {paraphrase_type} [SEP] POS: {pos_tags_str} [SEP] NER: {entities_str}"
+            combined_input = f"{sentence_1} {SEP} {segment_location_1} {SEP} {paraphrase_type} {SEP} POS: {pos_tags_str} {SEP} NER: {entities_str}"
         else:
-            combined_input = f"{sentence_1} [SEP] {segment_location_1} [SEP] {paraphrase_type}"
+            combined_input = f"{sentence_1} {SEP} {segment_location_1} {SEP} {paraphrase_type}"
 
 
         encoding = tokenizer(
