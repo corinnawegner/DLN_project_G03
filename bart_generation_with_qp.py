@@ -62,7 +62,7 @@ def perform_pos_ner(text):
     return pos_tags, entities
 
 
-def transform_data_with_qualitypredictor(dataset, qpmodel, predict_with_qp, q_sem=1, q_syn=1,
+def transform_data_with_qualitypredictor(dataset, qpmodel, predict_with_qp, q_sem=0.7, q_syn=0.7,
                                          q_lex=1, max_length=256, use_tagging=hyperparams['POS_NER_tagging']):
     tokenizer = AutoTokenizer.from_pretrained("facebook/bart-large")
     input_ids = []
@@ -133,7 +133,7 @@ def train_model(model, train_data, val_data, device, tokenizer, learning_rate=hy
     if not DEV_MODE:
         torch.cuda.empty_cache()
 
-    num_epochs = 100 if not DEV_MODE else 10
+    num_epochs = hyperparams['num_epochs']
     num_training_steps = num_epochs * len(train_data) // accumulation_steps
     progress_bar = tqdm(range(num_training_steps), disable=TQDM_DISABLE)
 
@@ -347,7 +347,7 @@ def finetune_paraphrase_generation(args):
     qpmodel = qp_model.QualityPredictor()
 
     print('Training quality predictor')
-    qpmodel = qp_model.train_quality_predictor(qpmodel, df_train_data_qp, num_epochs= 6 if not DEV_MODE else 1)  # Todo: find out best num epochs
+    qpmodel = qp_model.train_quality_predictor(qpmodel, df_train_data_qp, num_epochs= 20 if not DEV_MODE else 1)  # Todo: find out best num epochs
 
     train_dataset = pd.read_csv("data/etpc-paraphrase-train.csv", sep="\t")
     train_dataset = train_dataset if not DEV_MODE else train_dataset[:10]
