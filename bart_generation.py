@@ -45,7 +45,7 @@ hyperparams = {
     'num_epochs': 100 if not DEV_MODE else 10,
     'alpha': 0.0,
     'scheduler': "CosineAnnealingLR",
-    'POS_NER_tagging': False
+    'POS_NER_tagging': True
 }  # Todo: make every function take values from here
 
 if hyperparams['POS_NER_tagging'] == True:
@@ -123,6 +123,7 @@ def transform_data(dataset, max_length=256, use_tagging = hyperparams['POS_NER_t
 def train_model(model, train_data, val_data, device, tokenizer, learning_rate=hyperparams['learning_rate'],
                 batch_size=hyperparams['batch_size'],
                 patience=hyperparams['patience'], print_messages=DEV_MODE, alpha_ngram=0.0, alpha_diversity=0.0):
+
     accumulation_steps = int(batch_size / 32)
     if not DEV_MODE:
         torch.cuda.empty_cache()
@@ -397,7 +398,7 @@ def finetune_paraphrase_generation(args):
      #   scores_before_training = evaluate_model(model, val_data, device, tokenizer)
       #  bleu_score_before_training, _ = scores_before_training.values()
 
-
+    """
     model = BartForConditionalGeneration.from_pretrained("facebook/bart-large",
                                                          local_files_only=True)
     model.to(device)
@@ -409,6 +410,30 @@ def finetune_paraphrase_generation(args):
     bleu_score, _ = scores.values()
     print(f"The penalized BLEU-score of the model is: {bleu_score:.3f}")
     del model
+    """
+
+    best_bleu = 0
+    best_alpha_ngram = None
+    best_alpha_diversity = None
+
+    list_alpha_ngram = [1, 0.1]
+    list_alpha_diversity = [100, 20, 10, 1, 0.1]
+
+    for alpha in list_alpha_ngram:
+        for diversity in list_alpha_diversity:
+            print(f"n_gram: {alpha}, diversity: {diversity}")
+            model = BartForConditionalGeneration.from_pretrained("facebook/bart-large", local_files_only=True)
+            model.to(device)
+            model = train_model(model, train_data, val_data, device, tokenizer, learning_rate=hyperparams['learning_rate'], batch_size=hyperparams['batch_size'], patience=hyperparams['patience'], print_messages=True, alpha_ngram=alpha, alpha_diversity=diversity) #todo: set print_messages to DEV_MODE again
+            scores = evaluate_model(model, val_data, device, tokenizer)
+            bleu_score, _ = scores.values()
+            print(f"The penalized BLEU-score of the model is: {bleu_score:.3f}")
+            if bleu_score > best_bleu:
+                best_bleu = bleu_score
+                best_alpha_ngram = alpha
+                best_alpha_diversity = diversity
+            del model
+    print(f"Best BLEU: {best_bleu},The best alpha ngram: {best_alpha_ngram}, Best alpha diversity: {best_alpha_diversity}")
 
 #print(f"The METEOR-score of the model is: {meteor_score:.3f}")
     #print(f"Without training: \n BLEU: {bleu_score_before_training:.3f}")# \n METEOR: {meteor_score_before_training}")
