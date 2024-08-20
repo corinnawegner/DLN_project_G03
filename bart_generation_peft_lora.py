@@ -39,7 +39,7 @@ model_save_path = f"models/bart_generation_earlystopping_{r}.pt"
 
 hyperparams = {
     'optimizer': AdamW,
-    'learning_rate': 1e-5,
+    'learning_rate': 1e-3, #Because we don't finetune lora, we need a larger learning rate
     'batch_size': 64,
     'dropout_rate': 0.1,
     'patience': 3,
