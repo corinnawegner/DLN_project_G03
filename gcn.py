@@ -8,16 +8,21 @@ import torch.nn as nn
 import torch.nn.functional as F
 import math, copy, time
 
+from adjacency_matrix_from_dependence_tree import give_num_labels
+
+print(f"give_num_labels: {give_num_labels()}")
+number_labels =give_num_labels()
+
 class GraphConvolution(nn.Module):
     """
     syntactic GCN network, proposed in https://www.aclweb.org/anthology/D17-1159/
     """
 
-    def __init__(self, in_features, out_features, num_labels=44, dropout=0.2, gating=True, in_arcs=True, out_arcs=True, bias=True):
+    def __init__(self, in_features, out_features, num_labels=number_labels, dropout=0.2, gating=True, in_arcs=True, out_arcs=True, bias=True):
         super(GraphConvolution, self).__init__()
         self.in_features = in_features
         self.out_features = out_features
-        self.num_labels = num_labels
+        self.num_labels = num_labels #In the original implementation it was also 44, although there were 45 labels?
         self.in_arcs = in_arcs
         self.out_arcs = out_arcs
         self.gating = gating
@@ -53,6 +58,7 @@ class GraphConvolution(nn.Module):
 
         act_sum = h
 
+        #print(f"lbl range: {self.num_labels}") This is somehow 43 if self.num_labels
         for lbl in range(self.num_labels):
             if self.in_arcs:
                 inp_in = torch.matmul(gcn_inp, self.w_in[lbl]) + self.b_in[lbl]

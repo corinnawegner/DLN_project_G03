@@ -4,6 +4,7 @@ import argparse
 import random
 import numpy as np
 import pandas as pd
+from sacrebleu.metrics import BLEU
 import spacy
 import torch
 from sacrebleu.metrics import BLEU
@@ -42,7 +43,7 @@ hyperparams = {
     'num_epochs': 100 if not DEV_MODE else 2,
     'alpha': 0.0,
     'scheduler': None,
-    'POS_NER_tagging': False
+    'POS_NER_tagging': True
 }  # Todo: make every function take values from here
 
 r = random.randint(10000, 99999)
@@ -143,23 +144,8 @@ def train_gcn_bart_model(model, train_data, val_data, device, tokenizer, learnin
 
     optimizer = AdamW(model.parameters(), lr=learning_rate)
 
-    if use_scheduler is None:
-        scheduler = None
-    elif use_scheduler == 'ReduceLROnPlateau':
-        scheduler = ReduceLROnPlateau(optimizer, factor=0.1, patience=5)
-    elif use_scheduler == 'CosineAnnealingLR':
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs)
-    elif use_scheduler == 'OneCycleLR':
-        scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr=learning_rate,
-                                                        steps_per_epoch=len(train_data), epochs=num_epochs)
-    elif use_scheduler == 'MultiStepLR':
-        milestones = [int(0.5 * num_epochs), int(0.75 * num_epochs)]
-        scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=milestones, gamma=0.1)
-    else:
-        try:
-            scheduler = use_scheduler
-        except:
-            print("unknown scheduler, provide full information")
+
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs)
 
     scaler = GradScaler()
 
@@ -208,8 +194,7 @@ def train_gcn_bart_model(model, train_data, val_data, device, tokenizer, learnin
                 scaler.step(optimizer)
                 scaler.update()
                 optimizer.zero_grad()
-                if use_scheduler is not None:
-                    scheduler.step()
+                scheduler.step()
                 progress_bar.update(1)
 
         # Evaluate the model on validation data and perform early stopping
@@ -242,6 +227,8 @@ def transform_data_gcn(dataset, max_length=256):
     max_dim = max_length
     adj_matrices_list = []
 
+    SEP = tokenizer.sep_token
+
     for _, row in tqdm(dataset.iterrows(), total=len(dataset), disable=TQDM_DISABLE):
         sentence_1 = row['sentence1']
         adj_matrix = adjacency_matrix(sentence_1)
@@ -255,7 +242,7 @@ def transform_data_gcn(dataset, max_length=256):
 
     for idx, row in tqdm(dataset.iterrows(), total=len(dataset), disable=TQDM_DISABLE):
         sentence_1 = row['sentence1']
-        combined_input = f"{sentence_1} [SEP] {row['sentence1_segment_location']} [SEP] {row['paraphrase_types']}"
+        combined_input = f"{sentence_1} {SEP} {row['sentence1_segment_location']} {SEP} {row['paraphrase_types']}"
 
         encoding = tokenizer(
             combined_input,
@@ -297,39 +284,6 @@ def transform_data_gcn(dataset, max_length=256):
 
     return dataloader
 
-
-
-def finetune_paraphrase_generation_gcn(args):
-    device = torch.device("cuda") if args.use_gpu else torch.device("cpu")
-    tokenizer = AutoTokenizer.from_pretrained("facebook/bart-large", local_files_only=True)
-
-    gcn_layer = GraphConvolution(
-        in_features=1024,  # BART-large hidden size
-        out_features=1024, # todo: I changed it from 1024 to 256 because of the transform_data dimension
-        num_labels=44  # Number of labels in your adjacency matrices
-    ).to(device)
-
-    bart_model = BartForConditionalGeneration.from_pretrained("facebook/bart-large", local_files_only=True).to(device)
-    model = BartWithGCN(bart_model, gcn_layer)
-
-    train_dataset = pd.read_csv("data/etpc-paraphrase-train.csv", sep="\t")
-    train_dataset = train_dataset if not DEV_MODE else train_dataset[:10]
-    train_dataset_shuffled = train_dataset.sample(frac=1, random_state=42).reset_index(drop=True)
-
-    val_dataset = train_dataset_shuffled.sample(frac=0.2, random_state=42)
-    train_dataset = train_dataset_shuffled.drop(val_dataset.index)
-
-    train_data = transform_data_gcn(train_dataset)
-    val_data = transform_data_gcn(val_dataset)
-
-    model = train_gcn_bart_model(model, train_data, val_data, device, tokenizer,
-                        learning_rate=hyperparams['learning_rate'], batch_size=hyperparams['batch_size'],
-                        patience=hyperparams['patience'], print_messages=True,
-                        alpha_ngram=hyperparams['alpha'], alpha_diversity=hyperparams['alpha'])  # Use the best alpha values found
-
-    evaluate_model_gcn(model, val_data, device, tokenizer)
-
-from sacrebleu.metrics import BLEU
 
 def generate_paraphrases_gcn(model, dataloader, device, tokenizer):
     model.eval()
@@ -442,3 +396,37 @@ def evaluate_model_gcn(model, dataloader, device, tokenizer, print_messages=True
     meteor_score = "METEOR score not computed"
 
     return {"bleu_score": penalized_bleu, "meteor_score": meteor_score}
+
+
+def finetune_paraphrase_generation_gcn(args):
+    device = torch.device("cuda") if args.use_gpu else torch.device("cpu")
+    tokenizer = AutoTokenizer.from_pretrained("facebook/bart-large", local_files_only=True)
+
+    print("Loading model")
+    gcn_layer = GraphConvolution(
+        in_features=1024,  # BART-large hidden size
+        out_features=1024, # todo: I changed it from 1024 to 256 because of the transform_data dimension
+        num_labels=44  # Number of labels in your adjacency matrices
+    ).to(device)
+
+    bart_model = BartForConditionalGeneration.from_pretrained("facebook/bart-large", local_files_only=True).to(device)
+    model = BartWithGCN(bart_model, gcn_layer)
+
+    print("Loading datasets")
+    train_dataset = pd.read_csv("data/etpc-paraphrase-train.csv", sep="\t")
+    train_dataset = train_dataset if not DEV_MODE else train_dataset[:10]
+    train_dataset_shuffled = train_dataset.sample(frac=1, random_state=42).reset_index(drop=True)
+
+    val_dataset = train_dataset_shuffled.sample(frac=0.2, random_state=42)
+    train_dataset = train_dataset_shuffled.drop(val_dataset.index)
+
+    train_data = transform_data_gcn(train_dataset)
+    val_data = transform_data_gcn(val_dataset)
+
+    print("Starting Training")
+    model = train_gcn_bart_model(model, train_data, val_data, device, tokenizer,
+                        learning_rate=hyperparams['learning_rate'], batch_size=hyperparams['batch_size'],
+                        patience=hyperparams['patience'], print_messages=True,
+                        alpha_ngram=hyperparams['alpha'], alpha_diversity=hyperparams['alpha'])  # Use the best alpha values found
+
+    evaluate_model_gcn(model, val_data, device, tokenizer)
