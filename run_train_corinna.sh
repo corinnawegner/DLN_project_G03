@@ -15,6 +15,8 @@
 #module load anaconda3
 #source activate dnlp # Or whatever you called your environment.
 pip install --user peft
+pip install adapter-transformers
+
 
 # Printing out some info.
 echo "Submitting job with sbatch from directory: ${SLURM_SUBMIT_DIR}"
@@ -34,6 +36,6 @@ echo -e "Uncommitted Changes: $(git status --porcelain | wc -l)\n"
 
 # Run the script:
 #python -u bart_generation.py --use_gpu --local_files_only --option finetune --task sst --hidden_dropout_prob 0.1
-srun python -u bart_generation_prefix.py --use_gpu
+srun python -u bart_generation_peft_lora.py --use_gpu
 #srun python multitask_classifier.py --use_gpu --option finetune --task qqp
 
