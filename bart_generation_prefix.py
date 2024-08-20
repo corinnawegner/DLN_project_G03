@@ -18,7 +18,6 @@ import os
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, default_data_collator, get_linear_schedule_with_warmup
 from peft import get_peft_config, get_peft_model, get_peft_model_state_dict, PrefixTuningConfig, TaskType
 
-
 #import nltk
 #nltk.download('wordnet')
 
@@ -41,11 +40,11 @@ model_save_path = f"models/bart_generation_prefix_{r}.pt"
 
 hyperparams = {
     'optimizer': AdamW,
-    'learning_rate': 1e-2,
+    'learning_rate': 1e-1,
     'batch_size': 64,
     'dropout_rate': 0.0,
-    'patience': 3,
-    'num_epochs': 100 if not DEV_MODE else 10,
+    'patience': 5,
+    'num_epochs': 100 if not DEV_MODE else 100,
     'alpha': 1e-2,
 }  # Todo: make every function take values from here
 
@@ -137,7 +136,7 @@ def train_model(model, train_data, val_data, device, tokenizer, learning_rate=hy
             input_ids, attention_mask, labels = [tensor.to(device, non_blocking=True) for tensor in batch]
             with autocast():
                 outputs = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
-                loss = outputs.loss / accumulation_steps + 1000000
+                loss = outputs.loss / accumulation_steps
 
                 # Compute the n-gram penalty
                 with torch.no_grad():
@@ -316,6 +315,7 @@ def evaluate_model(model, dataloader, device, tokenizer, print_messages=True):
             predictions.extend(pred_text)
 
     # Calculate BLEU score
+    print(predictions[0])
     bleu_score_reference = bleu.corpus_score(references, [predictions]).score
     bleu_score_inputs = 100 - bleu.corpus_score(inputs, [predictions]).score
     penalized_bleu = bleu_score_reference * bleu_score_inputs / 52
@@ -362,7 +362,7 @@ def finetune_paraphrase_generation(args):
 
     print(f"Loaded {len(train_dataset)} training samples.")
 
-    peft_config = PrefixTuningConfig(task_type=TaskType.SEQ_2_SEQ_LM, inference_mode=False, num_virtual_tokens=20)
+    peft_config = PrefixTuningConfig(task_type=TaskType.SEQ_2_SEQ_LM, inference_mode=False, num_virtual_tokens=1) #todo: set num virtual tokens
 
     model = BartForConditionalGeneration.from_pretrained("facebook/bart-large",
                                                          local_files_only=True)
@@ -370,12 +370,15 @@ def finetune_paraphrase_generation(args):
     model.print_trainable_parameters()
     model.to(device)
 
-    if DEV_MODE:
-        scores_before_training = evaluate_model(model, val_data, device, tokenizer)
-        bleu_score_before_training, _ = scores_before_training.values()
+    scores_before_training = evaluate_model(model, val_data, device, tokenizer)
+    bleu_score_before_training, _ = scores_before_training.values()
+    print(f"BLEU score before training: {bleu_score_before_training}")
+
     model = train_model(model, train_data, val_data, device, tokenizer, learning_rate=hyperparams['learning_rate'], batch_size=hyperparams['batch_size'], patience=hyperparams['patience'], print_messages=True, alpha_ngram=0.0, alpha_diversity=0.0) #todo: set print_messages to DEV_MODE again
     scores = evaluate_model(model, val_data, device, tokenizer)
     bleu_score, _ = scores.values()
+
+
     #print(f"The METEOR-score of the model is: {meteor_score:.3f}")
     #print(f"Without training: \n BLEU: {bleu_score_before_training:.3f}")# \n METEOR: {meteor_score_before_training}")
 
