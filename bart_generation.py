@@ -137,23 +137,8 @@ def train_model(model, train_data, val_data, device, tokenizer, learning_rate=hy
 
     optimizer = AdamW(model.parameters(), lr=learning_rate)
 
-    if use_scheduler is None:
-        scheduler = None
-    elif use_scheduler == 'ReduceLROnPlateau':
-        scheduler = ReduceLROnPlateau(optimizer, factor=0.1, patience=5)
-    elif use_scheduler == 'CosineAnnealingLR':
+    if use_scheduler == True:
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs)
-    elif use_scheduler == 'OneCycleLR':
-        scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr=learning_rate,
-                                                        steps_per_epoch=len(train_data), epochs=num_epochs)
-    elif use_scheduler == 'MultiStepLR':
-        milestones = [int(0.5 * num_epochs), int(0.75 * num_epochs)]
-        scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=milestones, gamma=0.1)
-    else:
-        try:
-            scheduler = use_scheduler
-        except:
-            print("unknown scheduler, provide full information")
 
 
     scaler = GradScaler()

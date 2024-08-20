@@ -14,7 +14,7 @@
 
 #module load anaconda3
 #source activate dnlp # Or whatever you called your environment.
-pip install --user spacy
+#pip install --user spacy
 
 
 # Printing out some info.
@@ -26,7 +26,7 @@ echo "Current node: ${SLURM_NODELIST}"
 # For debugging purposes.
 python --version
 python -m torch.utils.collect_env 2> /dev/null
-python -m spacy download en_core_web_sm
+#python -m spacy download en_core_web_sm
 
 
 # Print out some git info.
