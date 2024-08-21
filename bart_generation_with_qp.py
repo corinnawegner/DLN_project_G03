@@ -128,7 +128,7 @@ def transform_data_with_qualitypredictor(dataset, qpmodel, predict_with_qp, q_se
 
 
 def train_model(model, train_data, val_data, device, tokenizer, learning_rate=hyperparams['learning_rate'], batch_size=hyperparams['batch_size'],
-                patience=hyperparams['patience'], print_messages=DEV_MODE, alpha_ngram=1e-2, alpha_diversity=1e-2):
+                patience=hyperparams['patience'], print_messages=DEV_MODE, alpha_ngram=1e-2, alpha_diversity=1e-2, dataset = None):
     accumulation_steps = int(batch_size / 32)
     if not DEV_MODE:
         torch.cuda.empty_cache()
@@ -189,7 +189,7 @@ def train_model(model, train_data, val_data, device, tokenizer, learning_rate=hy
             print(f"Epoch {epoch + 1}/{num_epochs} completed in {epoch_duration:.2f} seconds.")
 
         if val_data is not None:
-            scores = evaluate_model(model, val_data, device, tokenizer)
+            scores = evaluate_model(model, val_data, device, tokenizer, dataset = dataset)
             b = scores['bleu_score']
             bleu_scores.append(b)
 
@@ -258,7 +258,7 @@ def test_model(test_data, test_ids, device, model, tokenizer):
     return results
 
 
-def evaluate_model(model, dataloader, device, tokenizer):
+def evaluate_model(model, dataloader, device, tokenizer, dataset = None):
     """
     You can use your train/validation set to evaluate models performance with the BLEU score.
     test_data is a DataLoader, where the column "sentence1" contains all input sentence and
@@ -287,15 +287,22 @@ def evaluate_model(model, dataloader, device, tokenizer):
                 tokenizer.decode(g, skip_special_tokens=True, clean_up_tokenization_spaces=True)
                 for g in outputs
             ]
-            references.extend([
-                tokenizer.decode(label, skip_special_tokens=True, clean_up_tokenization_spaces=True)
-                for label in labels
-            ])
-            inputs.extend([
-                tokenizer.decode(input_id, skip_special_tokens=True, clean_up_tokenization_spaces=True)
-                for input_id in input_ids
-            ])
             predictions.extend(pred_text)
+
+    if dataset is None:
+        references.extend([
+            tokenizer.decode(label, skip_special_tokens=True, clean_up_tokenization_spaces=True)
+            for label in labels
+        ])
+        inputs.extend([
+            tokenizer.decode(input_id, skip_special_tokens=True, clean_up_tokenization_spaces=True)
+            for input_id in input_ids
+        ])
+    else:
+        inputs = dataset["sentence1"].tolist()
+        references = dataset["sentence2"].tolist()
+
+    model.train()
 
     # Calculate BLEU score
     bleu_score_reference = bleu.corpus_score(references, [predictions]).score
@@ -376,7 +383,7 @@ def finetune_paraphrase_generation(args):
     scores_before_training = evaluate_model(model, val_data, device, tokenizer)
     bleu_score_before_training, meteor_score_before_training = scores_before_training.values()
 
-    model = train_model(model, train_data, val_data, device, tokenizer)
+    model = train_model(model, train_data, val_data, device, tokenizer, dataset=val_dataset)
 
     print("Training finished.")
 
