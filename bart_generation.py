@@ -61,7 +61,14 @@ def perform_pos_ner(text):
     return pos_tags, entities
 
 
-def transform_data(dataset, max_length=256, use_tagging = hyperparams['POS_NER_tagging']):
+def transform_data(dataset, max_length=256, use_tagging=hyperparams['POS_NER_tagging']):
+    """
+    Turn the data to the format you want to use.
+    Use AutoTokenizer to obtain encoding (input_ids and attention_mask).
+    Tokenize the sentence pair in the following format:
+    sentence_1 + SEP + sentence_1 segment location + SEP + paraphrase types.
+    Return Data Loader.
+    """
     tokenizer = AutoTokenizer.from_pretrained("facebook/bart-large")
     input_ids = []
     attention_masks = []
@@ -74,19 +81,13 @@ def transform_data(dataset, max_length=256, use_tagging = hyperparams['POS_NER_t
         segment_location_1 = row['sentence1_segment_location']
         paraphrase_type = row['paraphrase_types']
 
-        # Perform POS and NER tagging
-        if use_tagging == True:
+        if use_tagging:
             pos_tags, entities = perform_pos_ner(sentence_1)
-
-            # Convert POS tags and entities to string format
             pos_tags_str = ' '.join([f"{token}/{tag}" for token, tag in pos_tags])
             entities_str = ' '.join([f"{ent}/{label}" for ent, label in entities])
-
-            # Combine the original sentence with POS and NER information
             combined_input = f"{sentence_1} {SEP} {segment_location_1} {SEP} {paraphrase_type} {SEP} POS: {pos_tags_str} {SEP} NER: {entities_str}"
         else:
             combined_input = f"{sentence_1} {SEP} {segment_location_1} {SEP} {paraphrase_type}"
-
 
         encoding = tokenizer(
             combined_input,
@@ -124,7 +125,7 @@ def transform_data(dataset, max_length=256, use_tagging = hyperparams['POS_NER_t
 
 def train_model(model, train_data, val_data, device, tokenizer, learning_rate=hyperparams['learning_rate'],
                 batch_size=hyperparams['batch_size'],
-                patience=hyperparams['patience'], print_messages=DEV_MODE, alpha_ngram=0.0, alpha_diversity=0.0):
+                patience=hyperparams['patience'], print_messages=DEV_MODE, alpha_ngram=0.0, alpha_diversity=0.0, val_dataset = None):
 
     accumulation_steps = int(batch_size / 32)
     if not DEV_MODE:
@@ -199,7 +200,7 @@ def train_model(model, train_data, val_data, device, tokenizer, learning_rate=hy
             print(f"Epoch {epoch + 1}/{num_epochs} completed in {epoch_duration:.2f} seconds.")
 
         if val_data is not None:
-            scores = evaluate_model(model, val_data, device, tokenizer, print_messages=print_messages)
+            scores = evaluate_model(model, val_data, device, tokenizer, print_messages=print_messages, dataset=val_dataset)
             b = scores['bleu_score']
             bleu_scores.append(b)
 
@@ -305,7 +306,7 @@ def generate_paraphrases(model, dataloader, device, tokenizer):
             })
             return paraphrases
 
-def evaluate_model(model, dataloader, device, tokenizer, print_messages=True):
+def evaluate_model(model, dataloader, device, tokenizer, print_messages=True, dataset = None):
     """
     You can use your train/validation set to evaluate models performance with the BLEU score.
     test_data is a DataLoader, where the column "sentence1" contains all input sentence and
@@ -334,16 +335,24 @@ def evaluate_model(model, dataloader, device, tokenizer, print_messages=True):
                 tokenizer.decode(g, skip_special_tokens=True, clean_up_tokenization_spaces=True)
                 for g in outputs
             ]
-            references.extend([
-                tokenizer.decode(label, skip_special_tokens=True, clean_up_tokenization_spaces=True)
-                for label in labels
-            ])
-            inputs.extend([
-                tokenizer.decode(input_id, skip_special_tokens=True, clean_up_tokenization_spaces=True)
-                for input_id in input_ids
-            ])
             predictions.extend(pred_text)
+            if dataset is None:
+                references.extend([
+                    tokenizer.decode(label, skip_special_tokens=True, clean_up_tokenization_spaces=True)
+                    for label in labels
+                ])
+                inputs.extend([
+                    tokenizer.decode(input_id, skip_special_tokens=True, clean_up_tokenization_spaces=True)
+                    for input_id in input_ids
+                ])
+            else:
+                inputs = dataset["sentence1"].tolist()
+                references = dataset["sentence2"].tolist()
 
+            model.train()
+
+
+    print(references)
     # Calculate BLEU score
     bleu_score_reference = bleu.corpus_score(references, [predictions]).score
     # Penalize BLEU score if its to close to the input
@@ -351,14 +360,13 @@ def evaluate_model(model, dataloader, device, tokenizer, print_messages=True):
     penalized_bleu = bleu_score_reference * bleu_score_inputs / 52
     if print_messages:
         print(f"BLEU Score: {bleu_score_reference}", f"Negative BLEU Score with input: {bleu_score_inputs}")
-
-        # Penalize BLEU and rescale it to 0-100
         # todo: If you perfectly predict all the targets, you should get an penalized BLEU score of around 52
         print(f"Penalized BLEU Score: {penalized_bleu}")
 
     #meteor_score = single_meteor_score(references, predictions)
 
     return {"bleu_score": penalized_bleu, "meteor_score": "meteor_score not computed"} #todo: put back meteor if want to use
+
 
 def seed_everything(seed=11711):
     random.seed(seed)
@@ -391,8 +399,9 @@ def finetune_paraphrase_generation(args):
     train_data = transform_data(train_dataset)
     val_data = transform_data(val_dataset)
 
-    #test_dataset = pd.read_csv("data/etpc-paraphrase-generation-test-student.csv", sep="\t")#[:10]
-    #test_dataset = test_dataset if not DEV_MODE else test_dataset[:10] #todo: put back at the end
+    test_dataset = pd.read_csv("data/etpc-paraphrase-generation-test-student.csv", sep="\t")#[:10]
+    test_dataset = test_dataset if not DEV_MODE else test_dataset[:10] #todo: put back at the end
+    test_data = transform_data(test_dataset)
 
     print(f"Loaded {len(train_dataset)} training samples.")
 
@@ -400,42 +409,19 @@ def finetune_paraphrase_generation(args):
      #   scores_before_training = evaluate_model(model, val_data, device, tokenizer)
       #  bleu_score_before_training, _ = scores_before_training.values()
 
-    """
+
     model = BartForConditionalGeneration.from_pretrained("facebook/bart-large",
                                                          local_files_only=True)
     model.to(device)
     model = train_model(model, train_data, val_data, device, tokenizer,
                         learning_rate=hyperparams['learning_rate'], batch_size=hyperparams['batch_size'],
                         patience=hyperparams['patience'], print_messages=True, alpha_ngram=hyperparams["alpha"],
-                        alpha_diversity=hyperparams["alpha"])  # todo: set print_messages to DEV_MODE again
-    scores = evaluate_model(model, val_data, device, tokenizer)
+                        alpha_diversity=hyperparams["alpha"], val_dataset = val_dataset)  # todo: set print_messages to DEV_MODE again
+    scores = evaluate_model(model, val_data, device, tokenizer, val_dataset = val_dataset)
     bleu_score, _ = scores.values()
     print(f"The penalized BLEU-score of the model is: {bleu_score:.3f}")
-    del model
-    """
 
-    best_bleu = 0
-    best_alpha_ngram = None
-    best_alpha_diversity = None
 
-    list_alpha_ngram = [1, 0.1]
-    list_alpha_diversity = [100, 20, 10, 1, 0.1]
-
-    for alpha in list_alpha_ngram:
-        for diversity in list_alpha_diversity:
-            print(f"n_gram: {alpha}, diversity: {diversity}")
-            model = BartForConditionalGeneration.from_pretrained("facebook/bart-large", local_files_only=True)
-            model.to(device)
-            model = train_model(model, train_data, val_data, device, tokenizer, learning_rate=hyperparams['learning_rate'], batch_size=hyperparams['batch_size'], patience=hyperparams['patience'], print_messages=True, alpha_ngram=alpha, alpha_diversity=diversity) #todo: set print_messages to DEV_MODE again
-            scores = evaluate_model(model, val_data, device, tokenizer)
-            bleu_score, _ = scores.values()
-            print(f"The penalized BLEU-score of the model is: {bleu_score:.3f}")
-            if bleu_score > best_bleu:
-                best_bleu = bleu_score
-                best_alpha_ngram = alpha
-                best_alpha_diversity = diversity
-            del model
-    print(f"Best BLEU: {best_bleu},The best alpha ngram: {best_alpha_ngram}, Best alpha diversity: {best_alpha_diversity}")
 
 #print(f"The METEOR-score of the model is: {meteor_score:.3f}")
     #print(f"Without training: \n BLEU: {bleu_score_before_training:.3f}")# \n METEOR: {meteor_score_before_training}")
@@ -447,9 +433,13 @@ def finetune_paraphrase_generation(args):
     #paraphrases.to_csv("predictions/bart/generation_predict.csv", index=False, sep="\t")
 
 
-    #test_ids = test_dataset["id"]
-    #test_results = test_model(test_data, test_ids, device, model, tokenizer)
+    test_ids = test_dataset["id"]
+    #bleu_test = evaluate_model_on_testset(model, test_dataset, device, tokenizer)
+    #print(f"Bleu test: {bleu_test}")
+
+
     #if not DEV_MODE:
+        #test_results = test_model(test_data, test_ids, device, model, tokenizer)
     #    test_results.to_csv(
     #        "predictions/bart/etpc-paraphrase-generation-test-output.csv", index=False, sep="\t"
     #    )
