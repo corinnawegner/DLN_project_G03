@@ -335,6 +335,7 @@ def get_args():
 def finetune_paraphrase_generation(args):
     device = torch.device("cuda") if args.use_gpu else torch.device("cpu")
     tokenizer = AutoTokenizer.from_pretrained("facebook/bart-large", local_files_only=True)
+    print("Loading models")
     model = BartForConditionalGeneration.from_pretrained("facebook/bart-large", local_files_only=True)
     model.to(device)
 
@@ -347,7 +348,7 @@ def finetune_paraphrase_generation(args):
     qpmodel = qp_model.QualityPredictor()
 
     print('Training quality predictor')
-    qpmodel = qp_model.train_quality_predictor(qpmodel, df_train_data_qp, num_epochs= 20 if not DEV_MODE else 1)  # Todo: find out best num epochs
+    qpmodel = qp_model.train_quality_predictor(qpmodel, df_train_data_qp, num_epochs = 20 if not DEV_MODE else 1)  # Todo: find out best num epochs
 
     train_dataset = pd.read_csv("data/etpc-paraphrase-train.csv", sep="\t")
     train_dataset = train_dataset if not DEV_MODE else train_dataset[:10]
@@ -375,7 +376,6 @@ def finetune_paraphrase_generation(args):
     scores_before_training = evaluate_model(model, val_data, device, tokenizer)
     bleu_score_before_training, meteor_score_before_training = scores_before_training.values()
 
-    #Todo: put back
     model = train_model(model, train_data, val_data, device, tokenizer)
 
     print("Training finished.")
