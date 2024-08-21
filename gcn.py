@@ -7,22 +7,20 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import math, copy, time
+import torch.nn.init as init
 
-from adjacency_matrix_from_dependence_tree import give_num_labels
 
-print(f"give_num_labels: {give_num_labels()}")
-number_labels =give_num_labels()
 
 class GraphConvolution(nn.Module):
     """
     syntactic GCN network, proposed in https://www.aclweb.org/anthology/D17-1159/
     """
 
-    def __init__(self, in_features, out_features, num_labels=number_labels, dropout=0.2, gating=True, in_arcs=True, out_arcs=True, bias=True):
+    def __init__(self, in_features, out_features, num_labels=5, dropout=0.2, gating=True, in_arcs=True, out_arcs=True, bias=True):
         super(GraphConvolution, self).__init__()
         self.in_features = in_features
         self.out_features = out_features
-        self.num_labels = num_labels #In the original implementation it was also 44, although there were 45 labels?
+        self.num_labels = num_labels
         self.in_arcs = in_arcs
         self.out_arcs = out_arcs
         self.gating = gating
@@ -43,11 +41,39 @@ class GraphConvolution(nn.Module):
             self.b_out_g = nn.ParameterList([nn.Parameter(torch.FloatTensor(1)) for i in range(num_labels)])
             self.b_loop_g = nn.Parameter(torch.FloatTensor(1))
 
+        # Initialize weights with Xavier uniform distribution
+        for w in self.w_in:
+            init.xavier_uniform_(w)
+        for w in self.w_out:
+            init.xavier_uniform_(w)
+        init.xavier_uniform_(self.w_loop)
+
+        if self.gating:
+            for w in self.w_in_g:
+                init.xavier_uniform_(w)
+            for w in self.w_out_g:
+                init.xavier_uniform_(w)
+            init.xavier_uniform_(self.w_loop_g)
+
+        # Optionally, initialize biases to zero
+        for b in self.b_in:
+            init.constant_(b, 0)
+        for b in self.b_out:
+            init.constant_(b, 0)
+        init.constant_(self.b_loop, 0)
+
+        if self.gating:
+            for b in self.b_in_g:
+                init.constant_(b, 0)
+            for b in self.b_out_g:
+                init.constant_(b, 0)
+            init.constant_(self.b_loop_g, 0)
+
     def forward(self, gcn_inp, adj_mat):
         # gcn_inp has shape [batch_size, len, hidden_size]
         # adj_mat has shape [batch_size, num_labels, len, len]
 
-        adj_mat = self.dropout(adj_mat)
+        #adj_mat = self.dropout(adj_mat)
 
         h = torch.matmul(gcn_inp, self.w_loop)  # Shape: [batch_size, len, hidden_size]
         h = h + self.b_loop
@@ -58,7 +84,6 @@ class GraphConvolution(nn.Module):
 
         act_sum = h
 
-        #print(f"lbl range: {self.num_labels}") This is somehow 43 if self.num_labels
         for lbl in range(self.num_labels):
             if self.in_arcs:
                 inp_in = torch.matmul(gcn_inp, self.w_in[lbl]) + self.b_in[lbl]
@@ -80,6 +105,7 @@ class GraphConvolution(nn.Module):
 
             act_sum += in_act + out_act
 
+        #print(f"act_sum: {act_sum}")
         return F.relu(act_sum)
 
     def __repr__(self):

@@ -51,7 +51,6 @@ def perform_pos_ner(text):
     entities = [(ent.text, ent.label_) for ent in doc.ents]
     return pos_tags, entities
 
-
 def test_model(test_data, test_ids, device, model, tokenizer):
     model.eval()
     generated_sentences = []
@@ -82,7 +81,6 @@ def test_model(test_data, test_ids, device, model, tokenizer):
         'id': test_ids,
         'Generated_sentence2': generated_sentences
     })
-
     return results
 
 def seed_everything(seed=11711):
@@ -100,7 +98,6 @@ def get_args():
     parser.add_argument("--use_gpu", action="store_true")
     args = parser.parse_args()
     return args
-
 
 #print(f"The METEOR-score of the model is: {meteor_score:.3f}")
     #print(f"Without training: \n BLEU: {bleu_score_before_training:.3f}")# \n METEOR: {meteor_score_before_training}")

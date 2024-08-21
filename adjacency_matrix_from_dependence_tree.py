@@ -5,12 +5,6 @@ import numpy as np
 nlp = spacy.load("en_core_web_sm")
 
 important_dependency_labels = (
-    'ROOT', 'nsubj', 'dobj', 'iobj', 'attr', 'amod', 'advmod', 'prep',
-    'compound', 'conj', 'det', 'nmod', 'neg', 'aux', 'auxpass', 'cc',
-    'ccomp', 'acl', 'xcomp', 'pobj'
-)
-
-important_dependency_labels = (
     'ROOT', 'nsubj', 'dobj', 'amod', 'prep'
 )
 
@@ -39,8 +33,12 @@ def adjacency_matrix(sentence):
             if label in label_to_idx:  # Check if label is in the set
                 label_idx = label_to_idx[label]
                 adj_matrices[label_idx, head_idx, dependent_idx] = 1
-            else:
-                print(f"Warning: Dependency label '{label}' not in important_dependency_labels")
+
+    total_sum = np.sum(adj_matrices)
+    print(f"Sum of all values in adjacency matrices: {total_sum}")
+
+    if np.all(adj_matrices == 0):
+        print("Warning: All adjacency matrices are zeros. No dependencies found.")
 
     return adj_matrices
 

@@ -36,11 +36,11 @@ TQDM_DISABLE = not DEV_MODE
 
 hyperparams = {
     'optimizer': AdamW,
-    'learning_rate': 1e-5,
+    'learning_rate': 1e-2,
     'batch_size': 64,
     'dropout_rate': 0.1,
     'patience': 3,
-    'num_epochs': 100 if not DEV_MODE else 2,
+    'num_epochs': 100 if not DEV_MODE else 10,
     'alpha': 0.0,
     'scheduler': None,
     'POS_NER_tagging': True
@@ -53,30 +53,6 @@ from transformers.modeling_outputs import BaseModelOutput
 class CustomEncoderOutput(BaseModelOutput):
     def __init__(self, last_hidden_state, **kwargs):
         super().__init__(last_hidden_state=last_hidden_state, **kwargs)
-
-def generate(self, input_ids, attention_mask, adj_matrices, **kwargs):
-    # Pass inputs through BART's encoder
-    encoder_outputs = self.bart_model.model.encoder(
-        input_ids=input_ids,
-        attention_mask=attention_mask
-    )
-
-    # Apply the GCN layer to the encoder's output
-    gcn_output = self.gcn_layer(encoder_outputs.last_hidden_state, adj_matrices)
-
-    # Wrap the GCN output in a suitable format
-    # Note: Ensure gcn_output is correctly formatted
-    encoder_outputs = CustomEncoderOutput(last_hidden_state=gcn_output)
-
-    # Generate using BART's decoder with the GCN-enhanced encoder output
-    generated_ids = self.bart_model.generate(
-        input_ids=input_ids,
-        attention_mask=attention_mask,
-        encoder_outputs=encoder_outputs,  # Pass the wrapped encoder outputs
-        **kwargs
-    )
-
-    return generated_ids
 
 
 class BartWithGCN(torch.nn.Module):
@@ -95,6 +71,7 @@ class BartWithGCN(torch.nn.Module):
         # Apply the GCN layer to the encoder's output
         gcn_output = self.gcn_layer(encoder_outputs.last_hidden_state, adj_matrices)
 
+        #gcn_output = encoder_outputs #Todo: debug
         # Pass the GCN-enhanced encoder output to the BART decoder
         decoder_outputs = self.bart_model(
             input_ids=None,
@@ -116,15 +93,19 @@ class BartWithGCN(torch.nn.Module):
         gcn_output = self.gcn_layer(encoder_outputs.last_hidden_state, adj_matrices)
 
         # Wrap the GCN output in a suitable format
-        encoder_outputs = CustomEncoderOutput(last_hidden_state=gcn_output)
+        encoder_outputs_combined = CustomEncoderOutput(last_hidden_state=gcn_output)
 
         # Generate using BART's decoder with the GCN-enhanced encoder output
         generated_ids = self.bart_model.generate(
             input_ids=input_ids,
             attention_mask=attention_mask,
-            encoder_outputs=encoder_outputs,  # Pass the wrapped encoder outputs
+            #encoder_outputs = encoder_outputs
+            encoder_outputs=encoder_outputs_combined,  #Todo: Debug
             **kwargs
         )
+
+        #print(f"encoder_outputs.shape = {encoder_outputs[0]}")
+        #print(f"gcn_output.shape = {gcn_output[0]}")
 
         return generated_ids
 
@@ -186,8 +167,6 @@ def train_gcn_bart_model(model, train_data, val_data, device, tokenizer, learnin
                     #penalty = alpha_ngram * ngram_penalty(pred_texts,input_texts) + alpha_diversity * diversity_penalty(pred_texts, input_texts)
 
                     #loss = loss + penalty
-            if print_messages:
-                print("Loss computed")
             scaler.scale(loss).backward()
 
             if (i + 1) % accumulation_steps == 0:
@@ -199,12 +178,37 @@ def train_gcn_bart_model(model, train_data, val_data, device, tokenizer, learnin
 
         # Evaluate the model on validation data and perform early stopping
         # (Same as in your original code)
+        if val_data is not None:
+            scores = evaluate_model_gcn(model, val_data, device, tokenizer, print_messages=print_messages)
+            b = scores['bleu_score']
+            bleu_scores.append(b)
 
+            if b > best_bleu_score:
+                best_bleu_score = scores['bleu_score']
+                best_epoch = epoch + 1
+                epochs_without_improvement = 0
+                # Save the best model
+                torch.save(model.state_dict(), model_save_path)
+            else:
+                epochs_without_improvement += 1
+
+            if epochs_without_improvement >= patience:
+                if print_messages:
+                    print(f"Early stopping triggered after {epoch + 1} epochs. \n")
+                    print(f'Best BLEU score: {best_bleu_score} at epoch {best_epoch}. \n')
+                    print(f"History: {bleu_scores}")
+                break
+    total_end_time = time.time()
+    total_training_time = total_end_time - total_start_time
+    if print_messages:
+        print(f"Total training time: {total_training_time:.2f} seconds.")
     # Load the best model before returning
     #model.load_state_dict(torch.load(model_save_path)) #Todo: reimplement earlystopping
     #model = model.to(device)
     return model
 
+def count_parameters(model):
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 def pad_adjacency_matrix(matrix, max_dim):
     # Create a new 3D matrix with the shape (num_labels, max_dim, max_dim) filled with zeros
@@ -377,16 +381,14 @@ def evaluate_model_gcn(model, dataloader, device, tokenizer, print_messages=True
             references.extend(ref_texts)
             inputs.extend(input_texts)
 
+    print(f"Predictions: {predictions[0]}")
     # Compute BLEU scores
-    # BLEU score for references
-    bleu_score_reference = bleu.corpus_score(predictions, references).score
+    bleu_score_reference = bleu.corpus_score(references, [predictions]).score
+    # Penalize BLEU score if its to close to the input
+    bleu_score_inputs = 100 - bleu.corpus_score(inputs, [predictions]).score
 
-    # BLEU score for inputs
-    bleu_score_inputs = 100 - bleu.corpus_score(predictions, [[inp] for inp in inputs]).score
-
-    # Penalized BLEU score
-    penalized_bleu = bleu_score_reference * bleu_score_inputs / 52
-
+    print(f"BLEU Score: {bleu_score_reference}", f"Negative BLEU Score with input: {bleu_score_inputs}")
+    penalized_bleu = bleu_score_reference*bleu_score_inputs/ 52
     if print_messages:
         print(f"BLEU Score: {bleu_score_reference:.2f}")
         print(f"Negative BLEU Score with input: {bleu_score_inputs:.2f}")
@@ -397,6 +399,8 @@ def evaluate_model_gcn(model, dataloader, device, tokenizer, print_messages=True
 
     return {"bleu_score": penalized_bleu, "meteor_score": meteor_score}
 
+from adjacency_matrix_from_dependence_tree import give_num_labels
+
 
 def finetune_paraphrase_generation_gcn(args):
     device = torch.device("cuda") if args.use_gpu else torch.device("cpu")
@@ -405,12 +409,15 @@ def finetune_paraphrase_generation_gcn(args):
     print("Loading model")
     gcn_layer = GraphConvolution(
         in_features=1024,  # BART-large hidden size
-        out_features=1024, # todo: I changed it from 1024 to 256 because of the transform_data dimension
-        num_labels=44  # Number of labels in your adjacency matrices
+        out_features=1024,
+        num_labels=give_num_labels()  # Number of labels in your adjacency matrices
     ).to(device)
 
     bart_model = BartForConditionalGeneration.from_pretrained("facebook/bart-large", local_files_only=True).to(device)
     model = BartWithGCN(bart_model, gcn_layer)
+
+    gcn_params = count_parameters(model.gcn_layer)
+    print(f"Number of parameters in the GCN layer: {gcn_params}")
 
     print("Loading datasets")
     train_dataset = pd.read_csv("data/etpc-paraphrase-train.csv", sep="\t")
