@@ -5,20 +5,23 @@ import pandas as pd
 import spacy
 import torch
 from sacrebleu.metrics import BLEU
-#from nltk.translate.meteor_score import single_meteor_score
+# from nltk.translate.meteor_score import single_meteor_score
 from torch.utils.data import DataLoader, TensorDataset
 from tqdm import tqdm
 from transformers import AutoTokenizer, BartForConditionalGeneration
-from optimizer import AdamW
+from optimizer import EAdam
 from torch.cuda.amp import autocast, GradScaler
 from penalty_function import ngram_penalty, diversity_penalty
 import time
 import warnings
 import socket
 import os
-from torch.optim.lr_scheduler import CosineAnnealingLR
-#import nltk
-#nltk.download('wordnet')
+from torch.optim.lr_scheduler import CosineAnnealingLR, ReduceLROnPlateau, MultiStepLR, OneCycleLR
+from torch.optim import Adam
+AdamW = Adam
+
+# import nltk
+# nltk.download('wordnet')
 
 try:
     local_hostname = socket.gethostname()
@@ -26,7 +29,7 @@ except:
     local_hostname = None
 
 DEV_MODE = False
-if local_hostname == 'Corinna-PC' or local_hostname == "TABLET-TTS0K9R0": #Todo: Add also laptop
+if local_hostname == 'Corinna-PC' or local_hostname == "TABLET-TTS0K9R0":  # Todo: Add also laptop
     DEV_MODE = True
 
 TQDM_DISABLE = not DEV_MODE
@@ -34,22 +37,24 @@ TQDM_DISABLE = not DEV_MODE
 warnings.filterwarnings("ignore", category=FutureWarning)
 
 r = random.randint(10000, 99999)
-model_save_path = f"models/bart_generation_earlystopping_{r}.pt"
+model_save_path = f"models/bart_generation_{r}.pt"
 
 hyperparams = {
     'optimizer': AdamW,
-    'learning_rate': 1e-5,
+    'learning_rate': 8e-5,
     'batch_size': 64,
     'dropout_rate': 0.1,
-    'patience': 3,
+    'patience': 5,
     'num_epochs': 100 if not DEV_MODE else 10,
     'alpha': 0.0,
-    'scheduler': "CosineAnnealingLR",
-    'POS_NER_tagging': True
+    'scheduler': "ReduceLROnPlateau",
+    'POS_NER_tagging': False,
+    'l2_regularization': 0.001,
 }  # Todo: make every function take values from here
 
 if hyperparams['POS_NER_tagging'] == True:
     nlp = spacy.load("en_core_web_sm")
+
 
 def perform_pos_ner(text):
     """
@@ -122,21 +127,59 @@ def transform_data(dataset, max_length=256, use_tagging=hyperparams['POS_NER_tag
 
     return dataloader
 
+def train_model(model, train_data, val_data, device, tokenizer,
+                learning_rate=hyperparams['learning_rate'], batch_size=hyperparams['batch_size'], optimizer="Adam", l2_lambda=hyperparams["l2_regularization"],
+                patience=5, use_scheduler="ReduceLROnPlateau", print_messages=True,
+                alpha_ngram=0.0, alpha_diversity=0.0):
 
-def train_model(model, train_data, val_data, device, tokenizer, learning_rate=hyperparams['learning_rate'],
-                batch_size=hyperparams['batch_size'],
-                patience=hyperparams['patience'], print_messages=DEV_MODE, alpha_ngram=0.0, alpha_diversity=0.0, val_dataset = None):
+    if learning_rate is None:
+        learning_rate = hyperparams['learning_rate']
+    if batch_size is None:
+        batch_size = hyperparams['batch_size']
+    if l2_lambda is None:
+        l2_lambda = hyperparams['l2_regularization']
+    if patience is None:
+        patience = hyperparams['patience']
 
-    accumulation_steps = int(batch_size / 32)
+    accumulate_steps = int(batch_size / 32)
+    num_epochs = hyperparams['num_epochs']
+
+    val_dataloader = transform_data(val_data)
+    #val_input_ids, val_attention_mask, val_labels = [tensor.to(device) for tensor in val_dataloader]
+
+    if accumulate_steps is None:
+        accumulate_steps = 1
+
     if not DEV_MODE:
         torch.cuda.empty_cache()
 
-    num_epochs = 100 if not DEV_MODE else 5
-    num_training_steps = num_epochs * len(train_data) // accumulation_steps
-    progress_bar = tqdm(range(num_training_steps), disable=TQDM_DISABLE)
+    progress_bar = tqdm(range(num_epochs * len(train_data) // accumulate_steps), disable=TQDM_DISABLE)
 
-    optimizer = AdamW(model.parameters(), lr=learning_rate)
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs)
+    # Initialize optimizer
+    if optimizer == "Adam":
+        optimizer = AdamW(model.parameters(), lr=learning_rate)
+    elif optimizer == "EAdam":
+        optimizer = EAdam(model.parameters(), lr=learning_rate)
+    else:
+        raise ValueError("Invalid optimizer choice.")
+
+    # Initialize scheduler
+    scheduler = None
+    if use_scheduler == 'ReduceLROnPlateau':
+        scheduler = ReduceLROnPlateau(optimizer, factor=0.1, patience=5)
+    elif use_scheduler == 'CosineAnnealingLR':
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs)
+    elif use_scheduler == 'OneCycleLR':
+        scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr=learning_rate,
+                                                        steps_per_epoch=len(train_data), epochs=num_epochs)
+    elif use_scheduler == 'MultiStepLR':
+        milestones = [int(0.5 * num_epochs), int(0.75 * num_epochs)]
+        scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=milestones, gamma=0.1)
+    elif use_scheduler:
+        try:
+            scheduler = use_scheduler
+        except Exception as e:
+            print(f"Scheduler error: {e}")
 
     scaler = GradScaler()
 
@@ -145,95 +188,112 @@ def train_model(model, train_data, val_data, device, tokenizer, learning_rate=hy
     best_epoch = 0
     epochs_without_improvement = 0
 
-    # Start timing
     total_start_time = time.time()
 
-    model.train()
     for epoch in range(num_epochs):
-        epoch_start_time = time.time()  # Start time for this epoch
-
-        optimizer.zero_grad()
+        torch.cuda.empty_cache()
+        model.train()
+        epoch_start_time = time.time()
         for i, batch in enumerate(train_data):
-            input_ids, attention_mask, labels = [tensor.to(device, non_blocking=True) for tensor in batch]
+            input_ids, attention_mask, labels = [tensor.to(device) for tensor in batch]
+
+            optimizer.zero_grad()
+
             with autocast():
                 outputs = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
-                loss = outputs.loss / accumulation_steps
+                loss = outputs.loss / accumulate_steps
 
-                if alpha_ngram != 0 or alpha_diversity !=0:
-                    # Generate paraphrases
-                    predictions = model.generate(
-                        input_ids,
-                        attention_mask=attention_mask,
-                        max_length=50,
-                        num_beams=5,
-                        early_stopping=True,
-                    )
+                # Add L2 regularization
+                l2_reg = sum(param.norm() ** 2 for param in model.parameters())
+                loss = loss + l2_lambda * l2_reg
 
-                    # Convert predictions to tensors if they are not already
-                    if isinstance(predictions, list):
-                        predictions = torch.tensor(predictions, device=device)
-
-                    # Compute the n-gram penalty
-                    # Decode predictions and inputs for penalty computation
+                if alpha_ngram != 0 or alpha_diversity != 0:
+                    predictions = model.generate(input_ids, attention_mask=attention_mask, max_length=50,
+                                                 num_beams=5, early_stopping=True)
                     pred_texts = tokenizer.batch_decode(predictions, skip_special_tokens=True)
                     input_texts = tokenizer.batch_decode(input_ids, skip_special_tokens=True)
-
-                    # Compute penalties
-                    penalty = alpha_ngram * ngram_penalty(pred_texts, input_texts) + alpha_diversity * diversity_penalty(
-                        pred_texts, input_texts)
-
+                    penalty = alpha_ngram * ngram_penalty(pred_texts, input_texts) + alpha_diversity * diversity_penalty(pred_texts, input_texts)
                     loss = loss + penalty
 
             scaler.scale(loss).backward()
 
-            if (i + 1) % accumulation_steps == 0:
+            if (i + 1) % accumulate_steps == 0:
                 scaler.step(optimizer)
                 scaler.update()
+
+                # Validation phase
+                model.eval()
+                val_loss = 0.0
+                num_batches = 0
+                with torch.no_grad():
+                    for batch in val_dataloader:
+                        # Move each batch of tensors to the device
+                        val_input_ids, val_attention_mask, val_labels = [tensor.to(device) for tensor in batch]
+
+                        # Forward pass
+                        val_outputs = model(input_ids=val_input_ids, attention_mask=val_attention_mask,
+                                            labels=val_labels)
+                        val_loss += val_outputs.loss.item()
+                        num_batches += 1
+
+                    # Average validation loss over all batches
+                    val_loss /= num_batches
+
+                    # Step the scheduler based on validation loss if using ReduceLROnPlateau
+                    if scheduler and isinstance(scheduler, ReduceLROnPlateau):
+                        scheduler.step(val_loss)
+                    elif scheduler:
+                        scheduler.step()
+
+                current_lr = scheduler.get_last_lr()[0] if scheduler else learning_rate
+                if print_messages:
+                    print(f"Current learning rate: {current_lr}")
+
                 optimizer.zero_grad()
-                scheduler.step(loss)
                 progress_bar.update(1)
 
-        # End time for this epoch
         epoch_end_time = time.time()
         epoch_duration = epoch_end_time - epoch_start_time
         if print_messages:
             print(f"Epoch {epoch + 1}/{num_epochs} completed in {epoch_duration:.2f} seconds.")
 
-        if val_data is not None:
-            scores = evaluate_model(model, val_data, device, tokenizer, print_messages=print_messages, dataset=val_dataset)
-            b = scores['bleu_score']
-            bleu_scores.append(b)
+        torch.cuda.empty_cache()
 
-            if b > best_bleu_score:
-                best_bleu_score = scores['bleu_score']
-                best_epoch = epoch + 1
-                epochs_without_improvement = 0
-                # Save the best model
-                torch.save(model.state_dict(), model_save_path)
-            else:
-                epochs_without_improvement += 1
+        model.eval()
+        with torch.no_grad():
+            scores = evaluate_model(model, val_data, device, tokenizer, print_messages=print_messages)
 
-            if epochs_without_improvement >= patience:
-                if print_messages:
-                    print(f"Early stopping triggered after {epoch + 1} epochs. \n")
-                    print(f'Best BLEU score: {best_bleu_score} at epoch {best_epoch}. \n')
-                    print(f"History: {bleu_scores}")
-                break
+        bleu_scores.append(scores['bleu_score'])
 
-    # End total timing
+        if scores['bleu_score'] > best_bleu_score:
+            best_bleu_score = scores['bleu_score']
+            best_epoch = epoch + 1
+            epochs_without_improvement = 0
+            torch.save(model.state_dict(), model_save_path)
+        else:
+            epochs_without_improvement += 1
+
+        if epochs_without_improvement >= patience and epoch > 15:
+            if print_messages:
+                print(f"Early stopping triggered after {epoch + 1} epochs.")
+                print(f'Best BLEU score: {best_bleu_score} at epoch {best_epoch}.')
+                print(f"History: {bleu_scores}")
+            break
+
     total_end_time = time.time()
     total_training_time = total_end_time - total_start_time
     if print_messages:
         print(f"Total training time: {total_training_time:.2f} seconds.")
 
-    # Load the best model before returning
-    del model
     torch.cuda.empty_cache()
-    model = BartForConditionalGeneration.from_pretrained("facebook/bart-large",
-                                                         local_files_only=True)
+
+    # Reload the best model
+    model = BartForConditionalGeneration.from_pretrained("facebook/bart-large", local_files_only=True)
     model.load_state_dict(torch.load(model_save_path))
     model = model.to(device)
+
     return model
+
 
 
 def test_model(test_data, test_ids, device, model, tokenizer):
@@ -268,6 +328,7 @@ def test_model(test_data, test_ids, device, model, tokenizer):
     })
 
     return results
+
 
 def generate_paraphrases(model, dataloader, device, tokenizer):
     model.eval()
@@ -306,21 +367,23 @@ def generate_paraphrases(model, dataloader, device, tokenizer):
             })
             return paraphrases
 
-def evaluate_model(model, dataloader, device, tokenizer, print_messages=True, dataset = None):
+
+def evaluate_model(model, dataset, device, tokenizer, print_messages=True):
     """
-    You can use your train/validation set to evaluate models performance with the BLEU score.
-    test_data is a DataLoader, where the column "sentence1" contains all input sentence and
-    the column "sentence2" contains all target sentences
-    """
+        You can use your train/validation set to evaluate models performance with the BLEU score.
+        test_data is a Pandas Dataframe, the column "sentence1" contains all input sentence and
+        the column "sentence2" contains all target sentences
+        """
     model.eval()
     bleu = BLEU()
     predictions = []
-    references = []
-    inputs = []
 
+    dataloader = transform_data(dataset)
     with torch.no_grad():
         for batch in dataloader:
-            input_ids, attention_mask, labels = [tensor.to(device) for tensor in batch]
+            input_ids, attention_mask, _ = batch
+            input_ids = input_ids.to(device)
+            attention_mask = attention_mask.to(device)
 
             # Generate paraphrases
             outputs = model.generate(
@@ -335,37 +398,32 @@ def evaluate_model(model, dataloader, device, tokenizer, print_messages=True, da
                 tokenizer.decode(g, skip_special_tokens=True, clean_up_tokenization_spaces=True)
                 for g in outputs
             ]
+
             predictions.extend(pred_text)
-            if dataset is None:
-                references.extend([
-                    tokenizer.decode(label, skip_special_tokens=True, clean_up_tokenization_spaces=True)
-                    for label in labels
-                ])
-                inputs.extend([
-                    tokenizer.decode(input_id, skip_special_tokens=True, clean_up_tokenization_spaces=True)
-                    for input_id in input_ids
-                ])
-            else:
-                inputs = dataset["sentence1"].tolist()
-                references = dataset["sentence2"].tolist()
 
-            model.train()
+    inputs = dataset["sentence1"].tolist()
+    references = dataset["sentence2"].tolist()
 
+    if print_messages:
+        for i in range(3 if not DEV_MODE else 1):
+            print(i, "inputs:", inputs[i], "predictions:", predictions[i], "references:", references[i])
 
-    print(references)
+    model.train()
     # Calculate BLEU score
     bleu_score_reference = bleu.corpus_score(references, [predictions]).score
     # Penalize BLEU score if its to close to the input
     bleu_score_inputs = 100 - bleu.corpus_score(inputs, [predictions]).score
+
+    print(f"BLEU Score: {bleu_score_reference}", f"Negative BLEU Score with input: {bleu_score_inputs}")
+
+    # Penalize BLEU and rescale it to 0-100
+    # If you perfectly predict all the targets, you should get an penalized BLEU score of around 52
     penalized_bleu = bleu_score_reference * bleu_score_inputs / 52
-    if print_messages:
-        print(f"BLEU Score: {bleu_score_reference}", f"Negative BLEU Score with input: {bleu_score_inputs}")
-        # todo: If you perfectly predict all the targets, you should get an penalized BLEU score of around 52
-        print(f"Penalized BLEU Score: {penalized_bleu}")
+    print(f"Penalized BLEU Score: {penalized_bleu}")
 
-    #meteor_score = single_meteor_score(references, predictions)
+    # meteor_score = single_meteor_score(references, predictions)
 
-    return {"bleu_score": penalized_bleu, "meteor_score": "meteor_score not computed"} #todo: put back meteor if want to use
+    return {"bleu_score": penalized_bleu, "meteor_score": "meteor_score not computed"}  # todo: put back meteor if want to use
 
 
 def seed_everything(seed=11711):
@@ -376,6 +434,7 @@ def seed_everything(seed=11711):
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.deterministic = True
+
 
 def get_args():
     parser = argparse.ArgumentParser()
@@ -389,6 +448,9 @@ def finetune_paraphrase_generation(args):
     device = torch.device("cuda") if args.use_gpu else torch.device("cpu")
     tokenizer = AutoTokenizer.from_pretrained("facebook/bart-large", local_files_only=True)
 
+    only_evaluate = False
+    hyperparamer_tuning_mode = False
+
     train_dataset = pd.read_csv("data/etpc-paraphrase-train.csv", sep="\t")
     train_dataset = train_dataset if not DEV_MODE else train_dataset[:10]
     train_dataset_shuffled = train_dataset.sample(frac=1, random_state=42).reset_index(drop=True)
@@ -397,52 +459,85 @@ def finetune_paraphrase_generation(args):
     train_dataset = train_dataset_shuffled.drop(val_dataset.index)
 
     train_data = transform_data(train_dataset)
-    val_data = transform_data(val_dataset)
+    val_data = val_dataset
+    # val_data = transform_data(val_dataset)
 
-    test_dataset = pd.read_csv("data/etpc-paraphrase-generation-test-student.csv", sep="\t")#[:10]
-    test_dataset = test_dataset if not DEV_MODE else test_dataset[:10] #todo: put back at the end
+    test_dataset = pd.read_csv("data/etpc-paraphrase-generation-test-student.csv", sep="\t")  # [:10]
+    test_dataset = test_dataset if not DEV_MODE else test_dataset[:10]  # todo: put back at the end
     test_data = transform_data(test_dataset)
 
     print(f"Loaded {len(train_dataset)} training samples.")
 
-    #if DEV_MODE:
-     #   scores_before_training = evaluate_model(model, val_data, device, tokenizer)
-      #  bleu_score_before_training, _ = scores_before_training.values()
+    # if DEV_MODE:
+    #   scores_before_training = evaluate_model(model, val_data, device, tokenizer)
+    #  bleu_score_before_training, _ = scores_before_training.values()
+
+    if only_evaluate:
+        model = BartForConditionalGeneration.from_pretrained("facebook/bart-large", local_files_only=True)
+        model.to(device)
+        scores = evaluate_model(model, val_data, device, tokenizer)
+        return
+    if hyperparamer_tuning_mode == True:
+        print("Testing POS NER tagging:")
+        model = BartForConditionalGeneration.from_pretrained("facebook/bart-large", local_files_only=True)
+        model.to(device)
+        model = train_model(model, train_data, val_data, device, tokenizer,
+                            learning_rate=hyperparams['learning_rate'], batch_size=hyperparams['batch_size'],
+                            patience=hyperparams['patience'], print_messages=True, alpha_ngram=0.0,
+                            alpha_diversity=0.0, val_dataset=val_dataset,
+                            optimizer="Adam")  # todo: Determine best scheduler first, Remember to put the POS NER hyperparameter to true
+        scores = evaluate_model(model, val_data, device, tokenizer)
+        bleu_score, _ = scores.values()
+        print(f"The penalized BLEU-score of the model is: {bleu_score:.3f}")
+        del model
+
+    if hyperparamer_tuning_mode == False:  # Todo: This code below is to check loss function engineering, BUT see below
+        print("Adam:")
+        model = BartForConditionalGeneration.from_pretrained("facebook/bart-large", local_files_only=True)
+        model.to(device)
+        print("Before training:")
+        evaluate_model(model, val_data, device, tokenizer)
+        model = train_model(model, train_data, val_data, device, tokenizer,
+                            learning_rate=hyperparams['learning_rate'], batch_size=hyperparams['batch_size'],
+                            patience=hyperparams['patience'], print_messages=True, alpha_ngram=0.0,
+                            alpha_diversity=0.0, optimizer="Adam",
+                            use_scheduler='ReduceLROnPlateau')  # todo: Determine best scheduler first
+        scores = evaluate_model(model, val_data, device, tokenizer)
+        bleu_score, _ = scores.values()
+        print(f"The penalized BLEU-score of the model is: {bleu_score:.3f}")
+       # del model
+#        print("EAdam:")
+ #       model = BartForConditionalGeneration.from_pretrained("facebook/bart-large", local_files_only=True)
+  #      model.to(device)
+   #     model = train_model(model, train_data, val_data, device, tokenizer,
+#                            learning_rate=hyperparams['learning_rate'], batch_size=hyperparams['batch_size'],
+ #                           patience=hyperparams['patience'], print_messages=True, alpha_ngram=0.0,
+  #                          alpha_diversity=0.0, optimizer="EAdam",
+   #                         use_scheduler=None)  # todo: Determine best scheduler first
+    #    scores = evaluate_model(model, val_data, device, tokenizer)
+     #   bleu_score, _ = scores.values()
+      #  print(f"The penalized BLEU-score of the model is: {bleu_score:.3f}")
+
+# print(f"The METEOR-score of the model is: {meteor_score:.3f}")
+# print(f"Without training: \n BLEU: {bleu_score_before_training:.3f}")# \n METEOR: {meteor_score_before_training}")
+# Clear GPU memory
+# del model
+# torch.cuda.empty_cache()
+
+# paraphrases = generate_paraphrases(model, val_data, device, tokenizer)
+# paraphrases.to_csv("predictions/bart/generation_predict.csv", index=False, sep="\t")
 
 
-    model = BartForConditionalGeneration.from_pretrained("facebook/bart-large",
-                                                         local_files_only=True)
-    model.to(device)
-    model = train_model(model, train_data, val_data, device, tokenizer,
-                        learning_rate=hyperparams['learning_rate'], batch_size=hyperparams['batch_size'],
-                        patience=hyperparams['patience'], print_messages=True, alpha_ngram=hyperparams["alpha"],
-                        alpha_diversity=hyperparams["alpha"], val_dataset = val_dataset)  # todo: set print_messages to DEV_MODE again
-    scores = evaluate_model(model, val_data, device, tokenizer, val_dataset = val_dataset)
-    bleu_score, _ = scores.values()
-    print(f"The penalized BLEU-score of the model is: {bleu_score:.3f}")
+# test_ids = test_dataset["id"]
+# bleu_test = evaluate_model_on_testset(model, test_dataset, device, tokenizer)
+# print(f"Bleu test: {bleu_test}")
 
 
-
-#print(f"The METEOR-score of the model is: {meteor_score:.3f}")
-    #print(f"Without training: \n BLEU: {bleu_score_before_training:.3f}")# \n METEOR: {meteor_score_before_training}")
-    # Clear GPU memory
-    #del model
-    #torch.cuda.empty_cache()
-
-    #paraphrases = generate_paraphrases(model, val_data, device, tokenizer)
-    #paraphrases.to_csv("predictions/bart/generation_predict.csv", index=False, sep="\t")
-
-
-    test_ids = test_dataset["id"]
-    #bleu_test = evaluate_model_on_testset(model, test_dataset, device, tokenizer)
-    #print(f"Bleu test: {bleu_test}")
-
-
-    #if not DEV_MODE:
-        #test_results = test_model(test_data, test_ids, device, model, tokenizer)
-    #    test_results.to_csv(
-    #        "predictions/bart/etpc-paraphrase-generation-test-output.csv", index=False, sep="\t"
-    #    )
+# if not DEV_MODE:
+# test_results = test_model(test_data, test_ids, device, model, tokenizer)
+#    test_results.to_csv(
+#        "predictions/bart/etpc-paraphrase-generation-test-output.csv", index=False, sep="\t"
+#    )
 
 if __name__ == "__main__":
     args = get_args()
