@@ -49,7 +49,7 @@ hyperparams = {
     'alpha': 0.0,
     'scheduler': "ReduceLROnPlateau",
     'POS_NER_tagging': False,
-    'l2_regularization': 0.001,
+    'l2_regularization': 0.01,
 }  # Todo: make every function take values from here
 
 if hyperparams['POS_NER_tagging'] == True:
@@ -132,26 +132,10 @@ def train_model(model, train_data, val_data, device, tokenizer,
                 patience=5, use_scheduler="ReduceLROnPlateau", print_messages=True,
                 alpha_ngram=0.0, alpha_diversity=0.0):
 
-    if learning_rate is None:
-        learning_rate = hyperparams['learning_rate']
-    if batch_size is None:
-        batch_size = hyperparams['batch_size']
-    if l2_lambda is None:
-        l2_lambda = hyperparams['l2_regularization']
-    if patience is None:
-        patience = hyperparams['patience']
-
     accumulate_steps = int(batch_size / 32)
     num_epochs = hyperparams['num_epochs']
 
     val_dataloader = transform_data(val_data)
-    #val_input_ids, val_attention_mask, val_labels = [tensor.to(device) for tensor in val_dataloader]
-
-    if accumulate_steps is None:
-        accumulate_steps = 1
-
-    if not DEV_MODE:
-        torch.cuda.empty_cache()
 
     progress_bar = tqdm(range(num_epochs * len(train_data) // accumulate_steps), disable=TQDM_DISABLE)
 
@@ -211,7 +195,7 @@ def train_model(model, train_data, val_data, device, tokenizer,
                     predictions = model.generate(input_ids, attention_mask=attention_mask, max_length=50,
                                                  num_beams=5, early_stopping=True)
                     pred_texts = tokenizer.batch_decode(predictions, skip_special_tokens=True)
-                    input_texts = tokenizer.batch_decode(input_ids, skip_special_tokens=True)
+                    input_texts = tokenizer.batch_decode(input_ids, skip_special_tokens=True) #Todo: Handle
                     penalty = alpha_ngram * ngram_penalty(pred_texts, input_texts) + alpha_diversity * diversity_penalty(pred_texts, input_texts)
                     loss = loss + penalty
 
@@ -221,36 +205,43 @@ def train_model(model, train_data, val_data, device, tokenizer,
                 scaler.step(optimizer)
                 scaler.update()
 
-                # Validation phase
-                model.eval()
-                val_loss = 0.0
-                num_batches = 0
-                with torch.no_grad():
-                    for batch in val_dataloader:
-                        # Move each batch of tensors to the device
-                        val_input_ids, val_attention_mask, val_labels = [tensor.to(device) for tensor in batch]
-
-                        # Forward pass
-                        val_outputs = model(input_ids=val_input_ids, attention_mask=val_attention_mask,
-                                            labels=val_labels)
-                        val_loss += val_outputs.loss.item()
-                        num_batches += 1
-
-                    # Average validation loss over all batches
-                    val_loss /= num_batches
-
-                    # Step the scheduler based on validation loss if using ReduceLROnPlateau
-                    if scheduler and isinstance(scheduler, ReduceLROnPlateau):
-                        scheduler.step(val_loss)
-                    elif scheduler:
-                        scheduler.step()
-
-                current_lr = scheduler.get_last_lr()[0] if scheduler else learning_rate
-                if print_messages:
-                    print(f"Current learning rate: {current_lr}")
-
                 optimizer.zero_grad()
+
+                # For OneCycleLR, the scheduler needs to step after every batch
+                if isinstance(scheduler, torch.optim.lr_scheduler.OneCycleLR):
+                    scheduler.step()
+
                 progress_bar.update(1)
+
+        # Validation phase
+        model.eval()
+        val_loss = 0.0
+        num_batches = 0
+        with torch.no_grad():
+            for batch in val_dataloader:
+                # Move each batch of tensors to the device
+                val_input_ids, val_attention_mask, val_labels = [tensor.to(device) for tensor in batch]
+
+                # Forward pass
+                val_outputs = model(input_ids=val_input_ids, attention_mask=val_attention_mask,
+                                    labels=val_labels)
+                val_loss += val_outputs.loss.item()
+                num_batches += 1
+
+            # Average validation loss over all batches
+            val_loss /= num_batches
+
+            # Step the scheduler based on validation loss if using ReduceLROnPlateau
+            if scheduler and isinstance(scheduler, ReduceLROnPlateau):
+                scheduler.step(val_loss)
+
+        # For other schedulers that require epoch-level stepping
+        if scheduler and not isinstance(scheduler, (ReduceLROnPlateau, torch.optim.lr_scheduler.OneCycleLR)):
+            scheduler.step()
+
+        current_lr = scheduler.get_last_lr()[0] if scheduler else learning_rate
+        if print_messages:
+            print(f"Current learning rate: {current_lr}")
 
         epoch_end_time = time.time()
         epoch_duration = epoch_end_time - epoch_start_time
