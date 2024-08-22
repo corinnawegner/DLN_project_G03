@@ -45,10 +45,10 @@ hyperparams = {
     'batch_size': 64,
     'dropout_rate': 0.1,
     'patience': 5,
-    'num_epochs': 100 if not DEV_MODE else 10,
+    'num_epochs': 100 if not DEV_MODE else 2,
     'alpha': 0.0,
     'scheduler': "ReduceLROnPlateau",
-    'POS_NER_tagging': False,
+    'POS_NER_tagging': True,
     'l2_regularization': 0.01,
 }  # Todo: make every function take values from here
 
@@ -78,10 +78,11 @@ def transform_data(dataset, max_length=256, use_tagging=hyperparams['POS_NER_tag
     input_ids = []
     attention_masks = []
     labels = []
+    indices = []
 
     SEP = tokenizer.sep_token
 
-    for _, row in tqdm(dataset.iterrows(), total=len(dataset), disable=TQDM_DISABLE):
+    for idx, row in tqdm(dataset.iterrows(), total=len(dataset), disable=TQDM_DISABLE):
         sentence_1 = row['sentence1']
         segment_location_1 = row['sentence1_segment_location']
         paraphrase_type = row['paraphrase_types']
@@ -117,12 +118,14 @@ def transform_data(dataset, max_length=256, use_tagging=hyperparams['POS_NER_tag
 
         input_ids.append(encoding['input_ids'].squeeze())
         attention_masks.append(encoding['attention_mask'].squeeze())
+        indices.append(idx)
 
     input_ids = torch.stack(input_ids)
     attention_masks = torch.stack(attention_masks)
     labels = torch.stack(labels)
+    indices = torch.tensor(indices)
 
-    dataset = TensorDataset(input_ids, attention_masks, labels)
+    dataset = TensorDataset(input_ids, attention_masks, labels, indices)
     dataloader = DataLoader(dataset, batch_size=32, shuffle=False)
 
     return dataloader
@@ -130,7 +133,7 @@ def transform_data(dataset, max_length=256, use_tagging=hyperparams['POS_NER_tag
 def train_model(model, train_data, val_data, device, tokenizer,
                 learning_rate=hyperparams['learning_rate'], batch_size=hyperparams['batch_size'], optimizer="Adam", l2_lambda=hyperparams["l2_regularization"],
                 patience=5, use_scheduler="ReduceLROnPlateau", print_messages=True,
-                alpha_ngram=0.0, alpha_diversity=0.0):
+                alpha_ngram=0.0, alpha_diversity=0.0, train_dataset = None):
 
     accumulate_steps = int(batch_size / 32)
     num_epochs = hyperparams['num_epochs']
@@ -138,6 +141,8 @@ def train_model(model, train_data, val_data, device, tokenizer,
     val_dataloader = transform_data(val_data)
 
     progress_bar = tqdm(range(num_epochs * len(train_data) // accumulate_steps), disable=TQDM_DISABLE)
+
+    input_texts = train_dataset["sentence1"].tolist()
 
     # Initialize optimizer
     if optimizer == "Adam":
@@ -179,7 +184,7 @@ def train_model(model, train_data, val_data, device, tokenizer,
         model.train()
         epoch_start_time = time.time()
         for i, batch in enumerate(train_data):
-            input_ids, attention_mask, labels = [tensor.to(device) for tensor in batch]
+            input_ids, attention_mask, labels, indices = [tensor.to(device) for tensor in batch]
 
             optimizer.zero_grad()
 
@@ -195,8 +200,10 @@ def train_model(model, train_data, val_data, device, tokenizer,
                     predictions = model.generate(input_ids, attention_mask=attention_mask, max_length=50,
                                                  num_beams=5, early_stopping=True)
                     pred_texts = tokenizer.batch_decode(predictions, skip_special_tokens=True)
-                    input_texts = tokenizer.batch_decode(input_ids, skip_special_tokens=True) #Todo: Handle
-                    penalty = alpha_ngram * ngram_penalty(pred_texts, input_texts) + alpha_diversity * diversity_penalty(pred_texts, input_texts)
+
+                    batch_indices = indices.tolist()
+                    input_texts_batch = [input_texts[idx] for idx in batch_indices]
+                    penalty = alpha_ngram * ngram_penalty(pred_texts, input_texts_batch) + alpha_diversity * diversity_penalty(pred_texts, input_texts_batch)
                     loss = loss + penalty
 
             scaler.scale(loss).backward()
@@ -220,11 +227,10 @@ def train_model(model, train_data, val_data, device, tokenizer,
         with torch.no_grad():
             for batch in val_dataloader:
                 # Move each batch of tensors to the device
-                val_input_ids, val_attention_mask, val_labels = [tensor.to(device) for tensor in batch]
+                val_input_ids, val_attention_mask, val_labels, _ = [tensor.to(device) for tensor in batch]
 
                 # Forward pass
-                val_outputs = model(input_ids=val_input_ids, attention_mask=val_attention_mask,
-                                    labels=val_labels)
+                val_outputs = model(input_ids=val_input_ids, attention_mask=val_attention_mask, labels=val_labels)
                 val_loss += val_outputs.loss.item()
                 num_batches += 1
 
@@ -240,8 +246,6 @@ def train_model(model, train_data, val_data, device, tokenizer,
             scheduler.step()
 
         current_lr = scheduler.get_last_lr()[0] if scheduler else learning_rate
-        if print_messages:
-            print(f"Current learning rate: {current_lr}")
 
         epoch_end_time = time.time()
         epoch_duration = epoch_end_time - epoch_start_time
@@ -372,7 +376,7 @@ def evaluate_model(model, dataset, device, tokenizer, print_messages=True):
     dataloader = transform_data(dataset)
     with torch.no_grad():
         for batch in dataloader:
-            input_ids, attention_mask, _ = batch
+            input_ids, attention_mask, _, _= batch
             input_ids = input_ids.to(device)
             attention_mask = attention_mask.to(device)
 
@@ -395,9 +399,9 @@ def evaluate_model(model, dataset, device, tokenizer, print_messages=True):
     inputs = dataset["sentence1"].tolist()
     references = dataset["sentence2"].tolist()
 
-    if print_messages:
-        for i in range(3 if not DEV_MODE else 1):
-            print(i, "inputs:", inputs[i], "predictions:", predictions[i], "references:", references[i])
+    #if print_messages:
+     #   for i in range(3 if not DEV_MODE else 1):
+      #      print(i, "inputs:", inputs[i], "predictions:", predictions[i], "references:", references[i])
 
     model.train()
     # Calculate BLEU score
@@ -439,23 +443,25 @@ def finetune_paraphrase_generation(args):
     device = torch.device("cuda") if args.use_gpu else torch.device("cpu")
     tokenizer = AutoTokenizer.from_pretrained("facebook/bart-large", local_files_only=True)
 
-    only_evaluate = False
-    hyperparamer_tuning_mode = False
-
+    hyperparamer_tuning_mode = True
     train_dataset = pd.read_csv("data/etpc-paraphrase-train.csv", sep="\t")
     train_dataset = train_dataset if not DEV_MODE else train_dataset[:10]
     train_dataset_shuffled = train_dataset.sample(frac=1, random_state=42).reset_index(drop=True)
 
     val_dataset = train_dataset_shuffled.sample(frac=0.2, random_state=42)
+
     train_dataset = train_dataset_shuffled.drop(val_dataset.index)
+    train_dataset = train_dataset.reset_index()
+
+    val_dataset = val_dataset.reset_index()
+    val_data = val_dataset
 
     train_data = transform_data(train_dataset)
-    val_data = val_dataset
     # val_data = transform_data(val_dataset)
 
     test_dataset = pd.read_csv("data/etpc-paraphrase-generation-test-student.csv", sep="\t")  # [:10]
     test_dataset = test_dataset if not DEV_MODE else test_dataset[:10]  # todo: put back at the end
-    test_data = transform_data(test_dataset)
+    #test_data = transform_data(test_dataset)
 
     print(f"Loaded {len(train_dataset)} training samples.")
 
@@ -463,27 +469,28 @@ def finetune_paraphrase_generation(args):
     #   scores_before_training = evaluate_model(model, val_data, device, tokenizer)
     #  bleu_score_before_training, _ = scores_before_training.values()
 
-    if only_evaluate:
-        model = BartForConditionalGeneration.from_pretrained("facebook/bart-large", local_files_only=True)
-        model.to(device)
-        scores = evaluate_model(model, val_data, device, tokenizer)
-        return
     if hyperparamer_tuning_mode == True:
-        print("Testing POS NER tagging:")
-        model = BartForConditionalGeneration.from_pretrained("facebook/bart-large", local_files_only=True)
-        model.to(device)
-        model = train_model(model, train_data, val_data, device, tokenizer,
-                            learning_rate=hyperparams['learning_rate'], batch_size=hyperparams['batch_size'],
-                            patience=hyperparams['patience'], print_messages=True, alpha_ngram=0.0,
-                            alpha_diversity=0.0, val_dataset=val_dataset,
-                            optimizer="Adam")  # todo: Determine best scheduler first, Remember to put the POS NER hyperparameter to true
-        scores = evaluate_model(model, val_data, device, tokenizer)
-        bleu_score, _ = scores.values()
-        print(f"The penalized BLEU-score of the model is: {bleu_score:.3f}")
-        del model
+
+        list_alpha = [0.001, 0.01, 0.1, 1]
+        list_bleu = []
+        for a in list_alpha:
+            print(f"alpha: {a}")
+            model = BartForConditionalGeneration.from_pretrained("facebook/bart-large", local_files_only=True)
+            model.to(device)
+            model = train_model(model, train_data, val_data, device, tokenizer,
+                                learning_rate=8e-5, batch_size=hyperparams['batch_size'],
+                            patience=hyperparams['patience'], print_messages=True, alpha_ngram=a,
+                            alpha_diversity=a, optimizer="Adam",
+                            use_scheduler='ReduceLROnPlateau', train_dataset = train_dataset)  # todo: Determine best scheduler first  # todo: Determine best scheduler first, Remember to put the POS NER hyperparameter to true
+            scores = evaluate_model(model, val_data, device, tokenizer)
+            bleu_score, _ = scores.values()
+            list_bleu.append(bleu_score)
+            print(f"The penalized BLEU-score for alpha {a} of the model is: {bleu_score:.3f}")
+            del model
+        print(f"alpha, bleu: {list_alpha, list_bleu}.")
 
     if hyperparamer_tuning_mode == False:  # Todo: This code below is to check loss function engineering, BUT see below
-        print("Adam:")
+        print("POS NER")
         model = BartForConditionalGeneration.from_pretrained("facebook/bart-large", local_files_only=True)
         model.to(device)
         print("Before training:")
@@ -496,18 +503,7 @@ def finetune_paraphrase_generation(args):
         scores = evaluate_model(model, val_data, device, tokenizer)
         bleu_score, _ = scores.values()
         print(f"The penalized BLEU-score of the model is: {bleu_score:.3f}")
-       # del model
-#        print("EAdam:")
- #       model = BartForConditionalGeneration.from_pretrained("facebook/bart-large", local_files_only=True)
-  #      model.to(device)
-   #     model = train_model(model, train_data, val_data, device, tokenizer,
-#                            learning_rate=hyperparams['learning_rate'], batch_size=hyperparams['batch_size'],
- #                           patience=hyperparams['patience'], print_messages=True, alpha_ngram=0.0,
-  #                          alpha_diversity=0.0, optimizer="EAdam",
-   #                         use_scheduler=None)  # todo: Determine best scheduler first
-    #    scores = evaluate_model(model, val_data, device, tokenizer)
-     #   bleu_score, _ = scores.values()
-      #  print(f"The penalized BLEU-score of the model is: {bleu_score:.3f}")
+        del model
 
 # print(f"The METEOR-score of the model is: {meteor_score:.3f}")
 # print(f"Without training: \n BLEU: {bleu_score_before_training:.3f}")# \n METEOR: {meteor_score_before_training}")
