@@ -1,5 +1,6 @@
 import argparse
 from optimizer import AdamW
+
 import qp_model
 from bleurt_pytorch import BleurtForSequenceClassification, BleurtTokenizer
 #from nltk.translate.meteor_score import single_meteor_score
@@ -57,7 +58,8 @@ hyperparams = {
     'scheduler': "ReduceLROnPlateau",
     'POS_NER_tagging': True,
     'l2_regularization': 0.01,
-    'use_QP': True
+    'use_QP': False,
+    'use_lora': True
 }  # Todo: make every function take values from here
 
 if hyperparams['POS_NER_tagging'] == True:
@@ -65,6 +67,9 @@ if hyperparams['POS_NER_tagging'] == True:
 
 if hyperparams["use_QP"] == True:
     from Quality_predictor import bart_generation_with_qp, qp_model, quality_measure
+
+if hyperparams['use_lora'] == True:
+    from peft import get_peft_model, LoraConfig, TaskType
 
 def perform_pos_ner(text):
     """
@@ -405,7 +410,7 @@ def evaluate_model(model, dataset, device, tokenizer, print_messages=True):
     dataloader = transform_data(dataset)
     with torch.no_grad():
         for batch in dataloader:
-            input_ids, attention_mask, _, _= batch
+            input_ids, attention_mask, _, _ = batch
             input_ids = input_ids.to(device)
             attention_mask = attention_mask.to(device)
 
@@ -516,6 +521,31 @@ def finetune_paraphrase_generation(args):
         print(f"The penalized BLEU-score of the model is: {bleu_score:.3f}")
         return
 
+    if hyperparams['use_lora'] == True:
+        base_model = BartForConditionalGeneration.from_pretrained("facebook/bart-large", local_files_only=True)
+
+        # Configure LoRA
+        lora_config = LoraConfig(
+            r=8,  # Low-rank factor
+            lora_alpha=16,  # Scaling factor
+            lora_dropout=0.1,  # Dropout rate for LoRA layers
+            task_type=TaskType.SEQ_2_SEQ_LM  # Task type for sequence-to-sequence models
+        )
+
+        # Wrap the model with LoRA
+        model = get_peft_model(base_model, lora_config)
+
+        model.to(device)
+
+        #model = train_model(model, train_data, val_data, device, tokenizer,
+         #                   learning_rate=1e-3, batch_size=hyperparams['batch_size'],
+          #                  patience=hyperparams['patience'], print_messages=True, alpha_ngram=0.0,
+           #                 alpha_diversity=0.0, optimizer="Adam",
+            #                use_scheduler='ReduceLROnPlateau')
+        scores = evaluate_model(model, val_data, device, tokenizer)
+        bleu_score, _ = scores.values()
+        print(f"The penalized BLEU-score of the model is: {bleu_score:.3f}")
+
     # if DEV_MODE:
     #   scores_before_training = evaluate_model(model, val_data, device, tokenizer)
     #  bleu_score_before_training, _ = scores_before_training.values()
@@ -540,7 +570,8 @@ def finetune_paraphrase_generation(args):
             del model
         print(f"alpha, bleu: {list_alpha, list_bleu}.")
 
-    if hyperparamer_tuning_mode == False:  # Todo: This code below is to check loss function engineering, BUT see below
+    normal_mode = False
+    if normal_mode == True:  # Todo: This code below is to check loss function engineering, BUT see below
         model = BartForConditionalGeneration.from_pretrained("facebook/bart-large", local_files_only=True)
         model.to(device)
         print("Before training:")
@@ -554,6 +585,7 @@ def finetune_paraphrase_generation(args):
         bleu_score, _ = scores.values()
         print(f"The penalized BLEU-score of the model is: {bleu_score:.3f}")
         del model
+
 
 # print(f"The METEOR-score of the model is: {meteor_score:.3f}")
 # print(f"Without training: \n BLEU: {bleu_score_before_training:.3f}")# \n METEOR: {meteor_score_before_training}")
