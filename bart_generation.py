@@ -1,4 +1,10 @@
 import argparse
+from optimizer import AdamW
+import qp_model
+from bleurt_pytorch import BleurtForSequenceClassification, BleurtTokenizer
+#from nltk.translate.meteor_score import single_meteor_score
+from torch.cuda.amp import autocast, GradScaler
+#from penalty_function import ngram_penalty, diversity_penalty#, length_penalty
 import random
 import numpy as np
 import pandas as pd
@@ -19,6 +25,7 @@ import os
 from torch.optim.lr_scheduler import CosineAnnealingLR, ReduceLROnPlateau, MultiStepLR, OneCycleLR
 from torch.optim import Adam
 AdamW = Adam
+
 
 # import nltk
 # nltk.download('wordnet')
@@ -50,11 +57,14 @@ hyperparams = {
     'scheduler': "ReduceLROnPlateau",
     'POS_NER_tagging': True,
     'l2_regularization': 0.01,
+    'use_QP': True
 }  # Todo: make every function take values from here
 
 if hyperparams['POS_NER_tagging'] == True:
     nlp = spacy.load("en_core_web_sm")
 
+if hyperparams["use_QP"] == True:
+    from Quality_predictor import bart_generation_with_qp, qp_model, quality_measure
 
 def perform_pos_ner(text):
     """
@@ -66,7 +76,9 @@ def perform_pos_ner(text):
     return pos_tags, entities
 
 
-def transform_data(dataset, max_length=256, use_tagging=hyperparams['POS_NER_tagging']):
+def transform_data(dataset, max_length=256, use_tagging=hyperparams['POS_NER_tagging'],
+                   use_QP= False, predict_with_qp = False, qpmodel = None, q_sem=0.7, q_syn=0.7,q_lex=1):
+
     """
     Turn the data to the format you want to use.
     Use AutoTokenizer to obtain encoding (input_ids and attention_mask).
@@ -74,6 +86,11 @@ def transform_data(dataset, max_length=256, use_tagging=hyperparams['POS_NER_tag
     sentence_1 + SEP + sentence_1 segment location + SEP + paraphrase types.
     Return Data Loader.
     """
+
+    if use_QP == True:
+        dataloader = bart_generation_with_qp.transform_data_with_qualitypredictor(dataset, qpmodel, predict_with_qp, q_sem=q_sem, q_syn=q_syn, q_lex=q_lex, max_length=max_length, use_tagging=use_tagging)
+        return dataloader
+
     tokenizer = AutoTokenizer.from_pretrained("facebook/bart-large")
     input_ids = []
     attention_masks = []
@@ -133,16 +150,28 @@ def transform_data(dataset, max_length=256, use_tagging=hyperparams['POS_NER_tag
 def train_model(model, train_data, val_data, device, tokenizer,
                 learning_rate=hyperparams['learning_rate'], batch_size=hyperparams['batch_size'], optimizer="Adam", l2_lambda=hyperparams["l2_regularization"],
                 patience=5, use_scheduler="ReduceLROnPlateau", print_messages=True,
-                alpha_ngram=0.0, alpha_diversity=0.0, train_dataset = None):
+                alpha_ngram=0.0, alpha_diversity=0.0, train_dataset = None, # This line is for loss function engineering
+                qpmodel = None): # This line is for QP
+    """
+    train_data: dataloader
+    train_dataset: pd.DataFrame, only needed when loss engineering is applied
+    val_data: pd.DataFrame
+    qpmodel: Only needed if QP
+    """
+    if DEV_MODE:
+        torch.save(model.state_dict(), model_save_path)
 
     accumulate_steps = int(batch_size / 32)
     num_epochs = hyperparams['num_epochs']
 
     val_dataloader = transform_data(val_data)
+    if hyperparams['use_QP'] == True:
+        val_dataloader = bart_generation_with_qp.transform_data_with_qualitypredictor(val_data, qpmodel, predict_with_qp=False)
 
     progress_bar = tqdm(range(num_epochs * len(train_data) // accumulate_steps), disable=TQDM_DISABLE)
 
-    input_texts = train_dataset["sentence1"].tolist()
+    if train_dataset is not None:
+        input_texts = train_dataset["sentence1"].tolist()
 
     # Initialize optimizer
     if optimizer == "Adam":
@@ -245,7 +274,7 @@ def train_model(model, train_data, val_data, device, tokenizer,
         if scheduler and not isinstance(scheduler, (ReduceLROnPlateau, torch.optim.lr_scheduler.OneCycleLR)):
             scheduler.step()
 
-        current_lr = scheduler.get_last_lr()[0] if scheduler else learning_rate
+        #current_lr = scheduler.get_last_lr()[0] if scheduler else learning_rate
 
         epoch_end_time = time.time()
         epoch_duration = epoch_end_time - epoch_start_time
@@ -260,7 +289,7 @@ def train_model(model, train_data, val_data, device, tokenizer,
 
         bleu_scores.append(scores['bleu_score'])
 
-        if scores['bleu_score'] > best_bleu_score:
+        if scores['bleu_score'] > best_bleu_score and epoch > 3:
             best_bleu_score = scores['bleu_score']
             best_epoch = epoch + 1
             epochs_without_improvement = 0
@@ -443,7 +472,10 @@ def finetune_paraphrase_generation(args):
     device = torch.device("cuda") if args.use_gpu else torch.device("cpu")
     tokenizer = AutoTokenizer.from_pretrained("facebook/bart-large", local_files_only=True)
 
-    hyperparamer_tuning_mode = True
+    #if hyperparams["use_QP"] == True:
+     #   qpmodel = bart_generation_with_qp.load_and_train_qp_model()
+
+    hyperparamer_tuning_mode = False
     train_dataset = pd.read_csv("data/etpc-paraphrase-train.csv", sep="\t")
     train_dataset = train_dataset if not DEV_MODE else train_dataset[:10]
     train_dataset_shuffled = train_dataset.sample(frac=1, random_state=42).reset_index(drop=True)
@@ -452,6 +484,8 @@ def finetune_paraphrase_generation(args):
 
     train_dataset = train_dataset_shuffled.drop(val_dataset.index)
     train_dataset = train_dataset.reset_index()
+
+    print(f"Loaded {len(train_dataset)} training samples.")
 
     val_dataset = val_dataset.reset_index()
     val_data = val_dataset
@@ -463,7 +497,24 @@ def finetune_paraphrase_generation(args):
     test_dataset = test_dataset if not DEV_MODE else test_dataset[:10]  # todo: put back at the end
     #test_data = transform_data(test_dataset)
 
-    print(f"Loaded {len(train_dataset)} training samples.")
+    if hyperparams["use_QP"]:
+        qpmodel = bart_generation_with_qp.load_and_train_qp_model()
+        train_data_qp = bart_generation_with_qp.transform_data_with_qualitypredictor(train_dataset, qpmodel, predict_with_qp=True)
+        #val_data_qp = bart_generation_with_qp.transform_data_with_qualitypredictor(val_dataset, qpmodel, predict_with_qp=False)
+
+        model = BartForConditionalGeneration.from_pretrained("facebook/bart-large", local_files_only=True)
+        model.to(device)
+        model = train_model(model, train_data_qp, val_data, device, tokenizer,
+                            learning_rate=hyperparams['learning_rate'], batch_size=hyperparams['batch_size'],
+                            patience=hyperparams['patience'], print_messages=True,
+                            use_scheduler='ReduceLROnPlateau', qpmodel = qpmodel, train_dataset= train_dataset)
+
+        print("Training finished.")
+
+        scores = evaluate_model(model, val_data, device, tokenizer)
+        bleu_score, _ = scores.values()
+        print(f"The penalized BLEU-score of the model is: {bleu_score:.3f}")
+        return
 
     # if DEV_MODE:
     #   scores_before_training = evaluate_model(model, val_data, device, tokenizer)
@@ -478,7 +529,7 @@ def finetune_paraphrase_generation(args):
             model = BartForConditionalGeneration.from_pretrained("facebook/bart-large", local_files_only=True)
             model.to(device)
             model = train_model(model, train_data, val_data, device, tokenizer,
-                                learning_rate=8e-5, batch_size=hyperparams['batch_size'],
+                            learning_rate=8e-5, batch_size=hyperparams['batch_size'],
                             patience=hyperparams['patience'], print_messages=True, alpha_ngram=a,
                             alpha_diversity=a, optimizer="Adam",
                             use_scheduler='ReduceLROnPlateau', train_dataset = train_dataset)  # todo: Determine best scheduler first  # todo: Determine best scheduler first, Remember to put the POS NER hyperparameter to true
@@ -490,7 +541,6 @@ def finetune_paraphrase_generation(args):
         print(f"alpha, bleu: {list_alpha, list_bleu}.")
 
     if hyperparamer_tuning_mode == False:  # Todo: This code below is to check loss function engineering, BUT see below
-        print("POS NER")
         model = BartForConditionalGeneration.from_pretrained("facebook/bart-large", local_files_only=True)
         model.to(device)
         print("Before training:")
