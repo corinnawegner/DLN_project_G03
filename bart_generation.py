@@ -1,4 +1,6 @@
 import argparse
+
+import paraphrase_generation_RL.paraphrase_detector_train
 from optimizer import AdamW
 from peft import PeftModel, PeftConfig
 import qp_model
@@ -56,7 +58,8 @@ hyperparams = {
     'POS_NER_tagging': True,
     'l2_regularization': 0.01,
     'use_QP': False,
-    'use_lora': True
+    'use_lora': False,
+    'use_RL': False
 }  # Todo: make every function take values from here
 
 if hyperparams['POS_NER_tagging'] == True:
@@ -67,6 +70,12 @@ if hyperparams["use_QP"] == True:
 
 if hyperparams['use_lora'] == True:
     from peft import get_peft_model, LoraConfig, TaskType
+
+if hyperparams['use_QP'] == True:
+    from paraphrase_generation_RL import paraphrase_detector_train
+    evaluator_model_path = "models/finetune-10-1e-05-qqp.pt"
+    if DEV_MODE:
+        evaluator_model_path = r"C:\Users\corin\OneDrive\Physik Master\SoSe 24\Deep Learning for Natural Language Processing\Project\models\qqp-finetune-10-1e-05.pt"  # models/finetune-10-1e-05-qqp.pt"
 
 # Define a model save path
 r = random.randint(10000, 99999)
@@ -490,8 +499,6 @@ def get_args():
 
 
 def finetune_paraphrase_generation(args):
-
-
     device = torch.device("cuda") if args.use_gpu else torch.device("cpu")
     tokenizer = AutoTokenizer.from_pretrained("facebook/bart-large", local_files_only=True)
 
@@ -515,9 +522,38 @@ def finetune_paraphrase_generation(args):
     train_data = transform_data(train_dataset)
     # val_data = transform_data(val_dataset)
 
-    test_dataset = pd.read_csv("data/etpc-paraphrase-generation-test-student.csv", sep="\t")  # [:10]
+    test_dataset = pd.read_csv("data/etpc-paraphrase-generation-test-student.csv", sep="\t")
     test_dataset = test_dataset if not DEV_MODE else test_dataset[:10]  # todo: put back at the end
     #test_data = transform_data(test_dataset)
+
+    if hyperparams["use_RL"]:
+        from paraphrase_generation_RL import paraphrase_detector_train
+        evaluator_model_path = "models/finetune-10-1e-05-qqp.pt"
+        if DEV_MODE:
+            evaluator_model_path = r"C:\Users\corin\OneDrive\Physik Master\SoSe 24\Deep Learning for Natural Language Processing\Project\models\qqp-finetune-10-1e-05.pt"  # models/finetune-10-1e-05-qqp.pt"
+
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        model = BartForConditionalGeneration.from_pretrained("facebook/bart-large").to(device)
+        tokenizer = AutoTokenizer.from_pretrained("facebook/bart-large")
+
+        evaluator, evaluator_tokenizer = paraphrase_detector_train.load_evaluator(evaluator_model_path, device)
+
+        print('Training generator.\n')
+        model = train_model(model, train_data, val_data, device, tokenizer,
+                            learning_rate=8e-5, batch_size=hyperparams['batch_size'],
+                            patience=hyperparams['patience'], print_messages=True, alpha_ngram=hyperparams["alpha"],
+                            alpha_diversity=hyperparams["alpha"], optimizer="Adam",
+                            use_scheduler='ReduceLROnPlateau', train_dataset = train_dataset)
+        print('Finished training generator.')
+
+        score_before_finetune = evaluate_model(model, val_data, device, tokenizer)
+        print(f'Score before fine-tuning with RL: {score_before_finetune}\n')
+
+        print('Training generator with feedback from evaluator.\n')
+        model = paraphrase_detector_train.fine_tune_generator(model, evaluator, evaluator_tokenizer, train_data, device, tokenizer, num_epochs=5)
+
+        score_after_finetune = evaluate_model(model, val_data, device, tokenizer)
+        print(f'Score after fine-tuning with evaluator: {score_after_finetune}\n')
 
     if hyperparams["use_QP"]:
         qpmodel = bart_generation_with_qp.load_and_train_qp_model()
@@ -562,10 +598,6 @@ def finetune_paraphrase_generation(args):
         scores = evaluate_model(model, val_data, device, tokenizer)
         bleu_score, _ = scores.values()
         print(f"The penalized BLEU-score of the model is: {bleu_score:.3f}")
-
-    # if DEV_MODE:
-    #   scores_before_training = evaluate_model(model, val_data, device, tokenizer)
-    #  bleu_score_before_training, _ = scores_before_training.values()
 
     if hyperparamer_tuning_mode == True:
 

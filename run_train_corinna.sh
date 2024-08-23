@@ -37,6 +37,6 @@ echo -e "Uncommitted Changes: $(git status --porcelain | wc -l)\n"
 
 # Run the script:
 #python -u bart_generation.py --use_gpu --local_files_only --option finetune --task sst --hidden_dropout_prob 0.1
+srun python multitask_classifier.py --use_gpu --option finetune --task qqp
 srun python -u bart_generation.py --use_gpu
-#srun python multitask_classifier.py --use_gpu --option finetune --task qqp
 
