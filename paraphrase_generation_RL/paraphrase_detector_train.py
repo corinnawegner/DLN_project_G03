@@ -96,9 +96,9 @@ def fine_tune_generator(model, evaluator, evaluator_tokenizer, train_data, devic
     return model
 
 
-"""
-# Main function to train and fine-tune the generator
-def main():
+    """
+    # Main function to train and fine-tune the generator
+    def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = BartForConditionalGeneration.from_pretrained("facebook/bart-large").to(device)
     tokenizer = AutoTokenizer.from_pretrained("facebook/bart-large")
@@ -108,7 +108,7 @@ def main():
     # Load datasets
     data_path = "data/etpc-paraphrase-train.csv"
     if DEV_MODE:
-        data_path = r"C:\Users\corin\PycharmProjects\DLN_project_G03\data\etpc-paraphrase-train.csv"
+        data_path = r"Cn\PycharmProjects\DLN_project_G03\data\etpc-paraphrase-train.csv"
     train_dataset = pd.read_csv(data_path, se) if not DEV_MODE else pd.read_csv(data_path, sep=")[:10]
     val_dataset = train_dataset.sample(frac=0.2, random_state=42)
     train_dataset = train_dataset.drop(val_dataset.index)
@@ -129,4 +129,4 @@ def main():
 
     score_after_finetune = bart_generation.evaluate_model(model, val_data, device, tokenizer)
     print(f'Score after fine-tuning with evaluator: {score_after_finetune
-"""
+    """

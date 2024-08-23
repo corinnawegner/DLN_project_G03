@@ -84,6 +84,13 @@ model_save_path = f"models/bart_generation_{r}.pt"
 def perform_pos_ner(text):
     """
     Perform POS tagging and NER on the given text.
+
+    Parameters:
+    text (str): The input text.
+    nlp (spacy.Language): The spaCy language model.
+
+    Returns:
+    tuple: POS tags and NER entities.
     """
     doc = nlp(text)
     pos_tags = [(token.text, token.pos_) for token in doc]
@@ -93,14 +100,18 @@ def perform_pos_ner(text):
 
 def transform_data(dataset, max_length=256, use_tagging=hyperparams['POS_NER_tagging'],
                    use_QP= False, predict_with_qp = False, qpmodel = None, q_sem=0.7, q_syn=0.7,q_lex=1): #Row for QP use. We want a high lexical diversity, so we put higher q value on lexical
+    """
+     Transform the dataset for training or evaluation.
 
-    """
-    Turn the data to the format you want to use.
-    Use AutoTokenizer to obtain encoding (input_ids and attention_mask).
-    Tokenize the sentence pair in the following format:
-    sentence_1 + SEP + sentence_1 segment location + SEP + paraphrase types.
-    Return Data Loader.
-    """
+     Parameters:
+     dataset (pd.DataFrame): Input dataset.
+     tokenizer (transformers.PreTrainedTokenizer): Tokenizer for encoding.
+     max_length (int): Maximum sequence length.
+     use_tagging (bool): Whether to use POS tagging and NER.
+
+     Returns:
+     DataLoader: DataLoader for the processed dataset.
+     """
 
     if use_QP == True:
         dataloader = bart_generation_with_qp.transform_data_with_qualitypredictor(dataset, qpmodel, predict_with_qp, q_sem=q_sem, q_syn=q_syn, q_lex=q_lex, max_length=max_length, use_tagging=use_tagging)
@@ -168,10 +179,27 @@ def train_model(model, train_data, val_data, device, tokenizer,
                 alpha_ngram=0.0, alpha_diversity=0.0, train_dataset = None, # This line is for loss function engineering
                 qpmodel = None): # This line is for QP
     """
-    train_data: dataloader
-    train_dataset: pd.DataFrame, only needed when loss engineering is applied
-    val_data: pd.DataFrame
-    qpmodel: Only needed if QP
+    Train a model.
+
+    Parameters:
+    - model (torch.nn.Module): The model to be trained.
+    - train_data (DataLoader): DataLoader for training data, containing input tensors and corresponding labels.
+    - val_data (DataFrame): DataFrame containing validation data for evaluating the model's performance.
+    - device (torch.device): Device to run the training on (e.g., 'cuda' or 'cpu').
+    - tokenizer (PreTrainedTokenizer): Tokenizer for encoding and decoding text data.
+    - learning_rate (float, default=hyperparams['learning_rate']): Learning rate for the optimizer.
+    - batch_size (int, default=hyperparams['batch_size']): Batch size for training.
+    - optimizer (str, default="Adam"): Type of optimizer to use ('Adam' or 'EAdam').
+    - l2_lambda (float, default=hyperparams["l2_regularization"]): Coefficient for L2 regularization.
+    - patience (int, default=5): Number of epochs to wait for improvement before applying early stopping.
+    - print_messages (bool, default=True): Flag to enable or disable printing training progress and statistics.
+    - alpha_ngram (float, default=0.0): Weight for n-gram penalty applied during loss calculation.
+    - alpha_diversity (float, default=0.0): Weight for diversity penalty applied during loss calculation.
+    - train_dataset (pd.DataFrame, optional): DataFrame required for loss function engineering (only needed if alpha_diversity or alpha_ngram are nonzero).
+    - qpmodel (object, optional): Quality Predictor model if Quality Prediction is applied.
+
+    Returns:
+    - torch.nn.Module: The best-performing model after training and validation.
     """
 
     torch.save(model.state_dict(), model_save_path)
@@ -201,22 +229,8 @@ def train_model(model, train_data, val_data, device, tokenizer,
         raise ValueError("Invalid optimizer choice.")
 
     # Initialize scheduler
-    scheduler = None
-    if use_scheduler == 'ReduceLROnPlateau':
-        scheduler = ReduceLROnPlateau(optimizer, factor=0.1, patience=5)
-    elif use_scheduler == 'CosineAnnealingLR':
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs)
-    elif use_scheduler == 'OneCycleLR':
-        scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr=learning_rate,
-                                                        steps_per_epoch=len(train_data), epochs=num_epochs)
-    elif use_scheduler == 'MultiStepLR':
-        milestones = [int(0.5 * num_epochs), int(0.75 * num_epochs)]
-        scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=milestones, gamma=0.1)
-    elif use_scheduler:
-        try:
-            scheduler = use_scheduler
-        except Exception as e:
-            print(f"Scheduler error: {e}")
+    scheduler = ReduceLROnPlateau(optimizer, factor=0.1, patience=5)
+
 
     scaler = GradScaler()
 
@@ -503,7 +517,7 @@ def finetune_paraphrase_generation(args):
     tokenizer = AutoTokenizer.from_pretrained("facebook/bart-large", local_files_only=True)
 
     hyperparamer_tuning_mode = False
-    normal_mode = False
+    normal_mode = True
 
     train_dataset = pd.read_csv("data/etpc-paraphrase-train.csv", sep="\t")
     train_dataset = train_dataset if not DEV_MODE else train_dataset[:10]
@@ -591,7 +605,7 @@ def finetune_paraphrase_generation(args):
         model.to(device)
 
         model = train_model(model, train_data, val_dataset, device, tokenizer,
-                            learning_rate=1e-3, batch_size=hyperparams['batch_size'],
+                            learning_rate=8e-5, batch_size=hyperparams['batch_size'],
                             patience=hyperparams['patience'], print_messages=True, alpha_ngram=0.001,
                             alpha_diversity=0.001, optimizer="Adam",
                             use_scheduler='ReduceLROnPlateau', train_dataset=train_dataset)
@@ -621,15 +635,26 @@ def finetune_paraphrase_generation(args):
 
 
     if normal_mode == True:  # Todo: This code below is to check loss function engineering, BUT see below
+        print("Adam:")
         model = BartForConditionalGeneration.from_pretrained("facebook/bart-large", local_files_only=True)
         model.to(device)
-        print("Before training:")
-        evaluate_model(model, val_data, device, tokenizer)
         model = train_model(model, train_data, val_data, device, tokenizer,
                             learning_rate=hyperparams['learning_rate'], batch_size=hyperparams['batch_size'],
                             patience=hyperparams['patience'], print_messages=True, alpha_ngram=0.0,
                             alpha_diversity=0.0, optimizer="Adam",
-                            use_scheduler='ReduceLROnPlateau')  # todo: Determine best scheduler first
+                            use_scheduler='ReduceLROnPlateau')
+        scores = evaluate_model(model, val_data, device, tokenizer)
+        bleu_score, _ = scores.values()
+        print(f"The penalized BLEU-score of the model is: {bleu_score:.3f}")
+        del model
+        print("EAdam:")
+        model = BartForConditionalGeneration.from_pretrained("facebook/bart-large", local_files_only=True)
+        model.to(device)
+        model = train_model(model, train_data, val_data, device, tokenizer,
+                            learning_rate=hyperparams['learning_rate'], batch_size=hyperparams['batch_size'],
+                            patience=hyperparams['patience'], print_messages=True, alpha_ngram=0.0,
+                            alpha_diversity=0.0, optimizer="EAdam",
+                            use_scheduler='ReduceLROnPlateau')
         scores = evaluate_model(model, val_data, device, tokenizer)
         bleu_score, _ = scores.values()
         print(f"The penalized BLEU-score of the model is: {bleu_score:.3f}")
