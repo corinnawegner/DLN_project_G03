@@ -361,8 +361,6 @@ def train_model(model, train_data, val_data, device, tokenizer,
 
     return model
 
-
-
 def test_model(test_data, test_ids, device, model, tokenizer):
     model.eval()
     generated_sentences = []
@@ -550,18 +548,18 @@ def finetune_paraphrase_generation(args):
         evaluator, evaluator_tokenizer = paraphrase_detector_train.load_evaluator(evaluator_model_path, device)
 
         print('Training generator.\n')
-        model = train_model(model, train_data, val_data, device, tokenizer,
-                            learning_rate=8e-5, batch_size=hyperparams['batch_size'],
-                            patience=hyperparams['patience'], print_messages=True, alpha_ngram=hyperparams["alpha"],
-                            alpha_diversity=hyperparams["alpha"], optimizer="Adam",
-                            use_scheduler='ReduceLROnPlateau', train_dataset = train_dataset)
+#        model = train_model(model, train_data, val_data, device, tokenizer,
+ #                           learning_rate=8e-5, batch_size=hyperparams['batch_size'],
+  #                          patience=hyperparams['patience'], print_messages=True, alpha_ngram=hyperparams["alpha"],
+   #                         alpha_diversity=hyperparams["alpha"], optimizer="Adam",
+    #                        use_scheduler='ReduceLROnPlateau', train_dataset = train_dataset)
         print('Finished training generator.')
 
         score_before_finetune = evaluate_model(model, val_data, device, tokenizer)
         print(f'Score before fine-tuning with RL: {score_before_finetune}\n')
 
         print('Training generator with feedback from evaluator.\n')
-        model = paraphrase_detector_train.fine_tune_generator(model, evaluator, evaluator_tokenizer, train_data, device, tokenizer, num_epochs=5)
+        model = paraphrase_detector_train.fine_tune_generator(model, evaluator, evaluator_tokenizer, train_data, device, tokenizer, train_dataset=train_dataset, learning_rate=1e-6) #Use smaller learning rate because model is already close to optimum
 
         score_after_finetune = evaluate_model(model, val_data, device, tokenizer)
         print(f'Score after fine-tuning with evaluator: {score_after_finetune}\n')
