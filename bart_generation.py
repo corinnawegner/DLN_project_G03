@@ -54,7 +54,7 @@ hyperparams = {
     'dropout_rate': 0.1,
     'patience': 5,
     'num_epochs': 100 if not DEV_MODE else 2,
-    'alpha': 0.0,
+    'alpha': 0.001,
     'scheduler': "ReduceLROnPlateau",
     'POS_NER_tagging': True,
     'l2_regularization': 0.01,
@@ -411,8 +411,11 @@ def evaluate_model(model, dataset, device, tokenizer, print_messages=True):
     with torch.no_grad():
         for batch in dataloader:
             input_ids, attention_mask, _, _ = batch
-            input_ids = input_ids.to(device)
-            attention_mask = attention_mask.to(device)
+           # input_ids = input_ids.to(device)
+            #attention_mask = attention_mask.to(device)
+
+            print(input_ids)
+            print(attention_mask)
 
             # Generate paraphrases
             outputs = model.generate(
