@@ -1,6 +1,6 @@
 import argparse
 from optimizer import AdamW
-
+from peft import PeftModel, PeftConfig
 import qp_model
 from bleurt_pytorch import BleurtForSequenceClassification, BleurtTokenizer
 #from nltk.translate.meteor_score import single_meteor_score
@@ -44,9 +44,6 @@ TQDM_DISABLE = not DEV_MODE
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 
-r = random.randint(10000, 99999)
-model_save_path = f"models/bart_generation_{r}.pt"
-
 hyperparams = {
     'optimizer': AdamW,
     'learning_rate': 8e-5,
@@ -71,6 +68,10 @@ if hyperparams["use_QP"] == True:
 if hyperparams['use_lora'] == True:
     from peft import get_peft_model, LoraConfig, TaskType
 
+# Define a model save path
+r = random.randint(10000, 99999)
+model_save_path = f"models/bart_generation_{r}.pt"
+
 def perform_pos_ner(text):
     """
     Perform POS tagging and NER on the given text.
@@ -82,7 +83,7 @@ def perform_pos_ner(text):
 
 
 def transform_data(dataset, max_length=256, use_tagging=hyperparams['POS_NER_tagging'],
-                   use_QP= False, predict_with_qp = False, qpmodel = None, q_sem=0.7, q_syn=0.7,q_lex=1):
+                   use_QP= False, predict_with_qp = False, qpmodel = None, q_sem=0.7, q_syn=0.7,q_lex=1): #Row for QP use. We want a high lexical diversity, so we put higher q value on lexical
 
     """
     Turn the data to the format you want to use.
@@ -163,8 +164,12 @@ def train_model(model, train_data, val_data, device, tokenizer,
     val_data: pd.DataFrame
     qpmodel: Only needed if QP
     """
-    if DEV_MODE:
-        torch.save(model.state_dict(), model_save_path)
+
+    torch.save(model.state_dict(), model_save_path)
+
+    if hyperparams["use_lora"] == True:
+        lora_save_path = "models/lora_model"
+        model.save_pretrained(lora_save_path)
 
     accumulate_steps = int(batch_size / 32)
     num_epochs = hyperparams['num_epochs']
@@ -175,8 +180,8 @@ def train_model(model, train_data, val_data, device, tokenizer,
 
     progress_bar = tqdm(range(num_epochs * len(train_data) // accumulate_steps), disable=TQDM_DISABLE)
 
-    if train_dataset is not None:
-        input_texts = train_dataset["sentence1"].tolist()
+
+    input_texts = train_dataset["sentence1"].tolist()
 
     # Initialize optimizer
     if optimizer == "Adam":
@@ -231,7 +236,7 @@ def train_model(model, train_data, val_data, device, tokenizer,
                 loss = loss + l2_lambda * l2_reg
 
                 if alpha_ngram != 0 or alpha_diversity != 0:
-                    predictions = model.generate(input_ids, attention_mask=attention_mask, max_length=50,
+                    predictions = model.generate(input_ids = input_ids, attention_mask=attention_mask, max_length=50,
                                                  num_beams=5, early_stopping=True)
                     pred_texts = tokenizer.batch_decode(predictions, skip_special_tokens=True)
 
@@ -298,7 +303,10 @@ def train_model(model, train_data, val_data, device, tokenizer,
             best_bleu_score = scores['bleu_score']
             best_epoch = epoch + 1
             epochs_without_improvement = 0
-            torch.save(model.state_dict(), model_save_path)
+            if hyperparams["use_lora"] == True:
+                model.save_pretrained(lora_save_path)
+            else:
+                torch.save(model.state_dict(), model_save_path)
         else:
             epochs_without_improvement += 1
 
@@ -318,7 +326,17 @@ def train_model(model, train_data, val_data, device, tokenizer,
 
     # Reload the best model
     model = BartForConditionalGeneration.from_pretrained("facebook/bart-large", local_files_only=True)
-    model.load_state_dict(torch.load(model_save_path))
+
+    if hyperparams["use_lora"] == True:
+        base_model = BartForConditionalGeneration.from_pretrained("facebook/bart-large", local_files_only=True)
+
+        # Load the LoRA configuration
+        model = PeftModel.from_pretrained(base_model, lora_save_path)
+        model.to(device)
+        print("Loaded best Lora model")
+    else:
+        model.load_state_dict(torch.load(model_save_path))
+
     model = model.to(device)
 
     return model
@@ -410,16 +428,11 @@ def evaluate_model(model, dataset, device, tokenizer, print_messages=True):
     dataloader = transform_data(dataset)
     with torch.no_grad():
         for batch in dataloader:
-            input_ids, attention_mask, _, _ = batch
-           # input_ids = input_ids.to(device)
-            #attention_mask = attention_mask.to(device)
-
-            print(input_ids)
-            print(attention_mask)
+            input_ids, attention_mask, labels, indices = [tensor.to(device) for tensor in batch]
 
             # Generate paraphrases
             outputs = model.generate(
-                input_ids,
+                input_ids=input_ids,
                 attention_mask=attention_mask,
                 max_length=50,
                 num_beams=5,
@@ -436,11 +449,10 @@ def evaluate_model(model, dataset, device, tokenizer, print_messages=True):
     inputs = dataset["sentence1"].tolist()
     references = dataset["sentence2"].tolist()
 
-    #if print_messages:
-     #   for i in range(3 if not DEV_MODE else 1):
-      #      print(i, "inputs:", inputs[i], "predictions:", predictions[i], "references:", references[i])
+   # if print_messages:
+    #    for i in range(3 if not DEV_MODE else 1):
+     #       print(i, "inputs:", inputs[i], "predictions:", predictions[i], "references:", references[i])
 
-    model.train()
     # Calculate BLEU score
     bleu_score_reference = bleu.corpus_score(references, [predictions]).score
     # Penalize BLEU score if its to close to the input
@@ -455,8 +467,9 @@ def evaluate_model(model, dataset, device, tokenizer, print_messages=True):
 
     # meteor_score = single_meteor_score(references, predictions)
 
-    return {"bleu_score": penalized_bleu, "meteor_score": "meteor_score not computed"}  # todo: put back meteor if want to use
+    model.train()
 
+    return {"bleu_score": penalized_bleu, "meteor_score": "meteor_score not computed"}  # todo: put back meteor if want to use
 
 def seed_everything(seed=11711):
     random.seed(seed)
@@ -477,13 +490,14 @@ def get_args():
 
 
 def finetune_paraphrase_generation(args):
+
+
     device = torch.device("cuda") if args.use_gpu else torch.device("cpu")
     tokenizer = AutoTokenizer.from_pretrained("facebook/bart-large", local_files_only=True)
 
-    #if hyperparams["use_QP"] == True:
-     #   qpmodel = bart_generation_with_qp.load_and_train_qp_model()
-
     hyperparamer_tuning_mode = False
+    normal_mode = False
+
     train_dataset = pd.read_csv("data/etpc-paraphrase-train.csv", sep="\t")
     train_dataset = train_dataset if not DEV_MODE else train_dataset[:10]
     train_dataset_shuffled = train_dataset.sample(frac=1, random_state=42).reset_index(drop=True)
@@ -508,7 +522,6 @@ def finetune_paraphrase_generation(args):
     if hyperparams["use_QP"]:
         qpmodel = bart_generation_with_qp.load_and_train_qp_model()
         train_data_qp = bart_generation_with_qp.transform_data_with_qualitypredictor(train_dataset, qpmodel, predict_with_qp=True)
-        #val_data_qp = bart_generation_with_qp.transform_data_with_qualitypredictor(val_dataset, qpmodel, predict_with_qp=False)
 
         model = BartForConditionalGeneration.from_pretrained("facebook/bart-large", local_files_only=True)
         model.to(device)
@@ -525,6 +538,7 @@ def finetune_paraphrase_generation(args):
         return
 
     if hyperparams['use_lora'] == True:
+
         base_model = BartForConditionalGeneration.from_pretrained("facebook/bart-large", local_files_only=True)
 
         # Configure LoRA
@@ -540,11 +554,11 @@ def finetune_paraphrase_generation(args):
 
         model.to(device)
 
-        #model = train_model(model, train_data, val_data, device, tokenizer,
-         #                   learning_rate=1e-3, batch_size=hyperparams['batch_size'],
-          #                  patience=hyperparams['patience'], print_messages=True, alpha_ngram=0.0,
-           #                 alpha_diversity=0.0, optimizer="Adam",
-            #                use_scheduler='ReduceLROnPlateau')
+        model = train_model(model, train_data, val_dataset, device, tokenizer,
+                            learning_rate=1e-3, batch_size=hyperparams['batch_size'],
+                            patience=hyperparams['patience'], print_messages=True, alpha_ngram=0.001,
+                            alpha_diversity=0.001, optimizer="Adam",
+                            use_scheduler='ReduceLROnPlateau', train_dataset=train_dataset)
         scores = evaluate_model(model, val_data, device, tokenizer)
         bleu_score, _ = scores.values()
         print(f"The penalized BLEU-score of the model is: {bleu_score:.3f}")
@@ -573,7 +587,7 @@ def finetune_paraphrase_generation(args):
             del model
         print(f"alpha, bleu: {list_alpha, list_bleu}.")
 
-    normal_mode = False
+
     if normal_mode == True:  # Todo: This code below is to check loss function engineering, BUT see below
         model = BartForConditionalGeneration.from_pretrained("facebook/bart-large", local_files_only=True)
         model.to(device)
