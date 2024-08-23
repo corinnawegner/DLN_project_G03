@@ -1,9 +1,8 @@
 import argparse
-
 import paraphrase_generation_RL.paraphrase_detector_train
 from optimizer import AdamW
 from peft import PeftModel, PeftConfig
-import qp_model
+#import qp_model
 from bleurt_pytorch import BleurtForSequenceClassification, BleurtTokenizer
 #from nltk.translate.meteor_score import single_meteor_score
 from torch.cuda.amp import autocast, GradScaler
@@ -59,7 +58,7 @@ hyperparams = {
     'l2_regularization': 0.01,
     'use_QP': False,
     'use_lora': False,
-    'use_RL': False
+    'use_RL': True
 }  # Todo: make every function take values from here
 
 if hyperparams['POS_NER_tagging'] == True:
@@ -71,11 +70,11 @@ if hyperparams["use_QP"] == True:
 if hyperparams['use_lora'] == True:
     from peft import get_peft_model, LoraConfig, TaskType
 
-if hyperparams['use_QP'] == True:
+if hyperparams['use_RL'] == True:
     from paraphrase_generation_RL import paraphrase_detector_train
-    evaluator_model_path = "models/finetune-10-1e-05-qqp.pt"
+    evaluator_model_path = "models/finetune-10-1e-05-sts.pt"
     if DEV_MODE:
-        evaluator_model_path = r"C:\Users\corin\OneDrive\Physik Master\SoSe 24\Deep Learning for Natural Language Processing\Project\models\qqp-finetune-10-1e-05.pt"  # models/finetune-10-1e-05-qqp.pt"
+        evaluator_model_path = r"C:\Users\corin\OneDrive\Physik Master\SoSe 24\Deep Learning for Natural Language Processing\Project\models\sts-finetune-10-1e-05.pt"  # models/finetune-10-1e-05-qqp.pt"
 
 # Define a model save path
 r = random.randint(10000, 99999)
@@ -217,7 +216,6 @@ def train_model(model, train_data, val_data, device, tokenizer,
 
     progress_bar = tqdm(range(num_epochs * len(train_data) // accumulate_steps), disable=TQDM_DISABLE)
 
-
     input_texts = train_dataset["sentence1"].tolist()
 
     # Initialize optimizer
@@ -230,7 +228,6 @@ def train_model(model, train_data, val_data, device, tokenizer,
 
     # Initialize scheduler
     scheduler = ReduceLROnPlateau(optimizer, factor=0.1, patience=5)
-
 
     scaler = GradScaler()
 
@@ -517,7 +514,7 @@ def finetune_paraphrase_generation(args):
     tokenizer = AutoTokenizer.from_pretrained("facebook/bart-large", local_files_only=True)
 
     hyperparamer_tuning_mode = False
-    normal_mode = True
+    normal_mode = False
 
     train_dataset = pd.read_csv("data/etpc-paraphrase-train.csv", sep="\t")
     train_dataset = train_dataset if not DEV_MODE else train_dataset[:10]
@@ -605,7 +602,7 @@ def finetune_paraphrase_generation(args):
         model.to(device)
 
         model = train_model(model, train_data, val_dataset, device, tokenizer,
-                            learning_rate=8e-5, batch_size=hyperparams['batch_size'],
+                            learning_rate=1e-4, batch_size=hyperparams['batch_size'],
                             patience=hyperparams['patience'], print_messages=True, alpha_ngram=0.001,
                             alpha_diversity=0.001, optimizer="Adam",
                             use_scheduler='ReduceLROnPlateau', train_dataset=train_dataset)
@@ -642,7 +639,7 @@ def finetune_paraphrase_generation(args):
                             learning_rate=hyperparams['learning_rate'], batch_size=hyperparams['batch_size'],
                             patience=hyperparams['patience'], print_messages=True, alpha_ngram=0.0,
                             alpha_diversity=0.0, optimizer="Adam",
-                            use_scheduler='ReduceLROnPlateau')
+                            use_scheduler='ReduceLROnPlateau', train_dataset = train_dataset)
         scores = evaluate_model(model, val_data, device, tokenizer)
         bleu_score, _ = scores.values()
         print(f"The penalized BLEU-score of the model is: {bleu_score:.3f}")
@@ -654,7 +651,7 @@ def finetune_paraphrase_generation(args):
                             learning_rate=hyperparams['learning_rate'], batch_size=hyperparams['batch_size'],
                             patience=hyperparams['patience'], print_messages=True, alpha_ngram=0.0,
                             alpha_diversity=0.0, optimizer="EAdam",
-                            use_scheduler='ReduceLROnPlateau')
+                            use_scheduler='ReduceLROnPlateau', train_dataset= train_dataset)
         scores = evaluate_model(model, val_data, device, tokenizer)
         bleu_score, _ = scores.values()
         print(f"The penalized BLEU-score of the model is: {bleu_score:.3f}")
