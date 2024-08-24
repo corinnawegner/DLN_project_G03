@@ -60,9 +60,9 @@ def quality_vector(s, s_prime):
     qlex = normalized_character_edit_distance_simple(s, s_prime)
 
     # Normalize the scores to [0, 100]
-    qsem_normalized = int(100 * qsem)
-    qsyn_normalized = int(100 * (1 - qsyn))
-    qlex_normalized = int(100 * (1 - qlex))
+    qsem_normalized = int(100 * qsem)/100
+    qsyn_normalized = int(100 * (1 - qsyn))/100
+    qlex_normalized = int(100 * (1 - qlex))/100
 
     return qsem_normalized, qsyn_normalized, qlex_normalized
 
@@ -106,7 +106,7 @@ def normalized_character_edit_distance(words1, words2):
     return character_edit_distance(str1, str2)
 
 
-def compute_bleurt_score(reference, candidate, model, tokenizer): #todo: wait, do we train our bleurt model on a score that is from the pretrained bleurt?
+def compute_bleurt_score(reference, candidate, model, tokenizer): # wait, do we train our bleurt model on a score that is from the pretrained bleurt?
     """Compute BLEURT score for semantic similarity."""
     model.eval()
     with torch.no_grad():

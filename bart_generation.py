@@ -56,16 +56,19 @@ hyperparams = {
     'scheduler': "ReduceLROnPlateau",
     'POS_NER_tagging': True,
     'l2_regularization': 0.01,
-    'use_QP': False,
+    'use_QP': True,
     'use_lora': False,
-    'use_RL': True
+    'use_RL': False,
+    'tuning_mode': False,
+    'normal_mode': False
 }  # Todo: make every function take values from here
 
 if hyperparams['POS_NER_tagging'] == True:
     nlp = spacy.load("en_core_web_sm")
 
 if hyperparams["use_QP"] == True:
-    from Quality_predictor import bart_generation_with_qp, qp_model, quality_measure
+    from Quality_predictor import bart_generation_with_qp
+
 
 if hyperparams['use_lora'] == True:
     from peft import get_peft_model, LoraConfig, TaskType
@@ -98,7 +101,7 @@ def perform_pos_ner(text):
 
 
 def transform_data(dataset, max_length=256, use_tagging=hyperparams['POS_NER_tagging'],
-                   use_QP= False, predict_with_qp = False, qpmodel = None, q_sem=0.7, q_syn=0.7,q_lex=1): #Row for QP use. We want a high lexical diversity, so we put higher q value on lexical
+                   qpmodel = None, device=None): #Row for QP use.
     """
      Transform the dataset for training or evaluation.
 
@@ -111,10 +114,6 @@ def transform_data(dataset, max_length=256, use_tagging=hyperparams['POS_NER_tag
      Returns:
      DataLoader: DataLoader for the processed dataset.
      """
-
-    if use_QP == True:
-        dataloader = bart_generation_with_qp.transform_data_with_qualitypredictor(dataset, qpmodel, predict_with_qp, q_sem=q_sem, q_syn=q_syn, q_lex=q_lex, max_length=max_length, use_tagging=use_tagging)
-        return dataloader
 
     tokenizer = AutoTokenizer.from_pretrained("facebook/bart-large")
     input_ids = []
@@ -136,6 +135,11 @@ def transform_data(dataset, max_length=256, use_tagging=hyperparams['POS_NER_tag
             combined_input = f"{sentence_1} {SEP} {segment_location_1} {SEP} {paraphrase_type} {SEP} POS: {pos_tags_str} {SEP} NER: {entities_str}"
         else:
             combined_input = f"{sentence_1} {SEP} {segment_location_1} {SEP} {paraphrase_type}"
+        if qpmodel is not None:
+            quality_vector = qpmodel.predict(sentence_1, device)  # Assuming qpmodel is callable and returns a tensor
+            quality_vector_str = ' '.join(map(str, quality_vector.tolist()))
+            combined_input += f" {SEP} QV: {quality_vector_str}"
+
 
         encoding = tokenizer(
             combined_input,
@@ -168,9 +172,11 @@ def transform_data(dataset, max_length=256, use_tagging=hyperparams['POS_NER_tag
     indices = torch.tensor(indices)
 
     dataset = TensorDataset(input_ids, attention_masks, labels, indices)
+
     dataloader = DataLoader(dataset, batch_size=32, shuffle=False)
 
     return dataloader
+
 
 def train_model(model, train_data, val_data, device, tokenizer,
                 learning_rate=hyperparams['learning_rate'], batch_size=hyperparams['batch_size'], optimizer="Adam", l2_lambda=hyperparams["l2_regularization"],
@@ -212,7 +218,7 @@ def train_model(model, train_data, val_data, device, tokenizer,
 
     val_dataloader = transform_data(val_data)
     if hyperparams['use_QP'] == True:
-        val_dataloader = bart_generation_with_qp.transform_data_with_qualitypredictor(val_data, qpmodel, predict_with_qp=False)
+        val_dataloader = transform_data(val_data, qpmodel=qpmodel)
 
     progress_bar = tqdm(range(num_epochs * len(train_data) // accumulate_steps), disable=TQDM_DISABLE)
 
@@ -319,16 +325,21 @@ def train_model(model, train_data, val_data, device, tokenizer,
 
         bleu_scores.append(scores['bleu_score'])
 
-        if scores['bleu_score'] > best_bleu_score and epoch > 3:
-            best_bleu_score = scores['bleu_score']
-            best_epoch = epoch + 1
-            epochs_without_improvement = 0
-            if hyperparams["use_lora"] == True:
-                model.save_pretrained(lora_save_path)
+        if epoch > 3:
+            if scores['bleu_score'] > best_bleu_score:
+                best_bleu_score = scores['bleu_score']
+                best_epoch = epoch + 1
+                epochs_without_improvement = 0
+                if hyperparams["use_lora"] == True:
+                    model.save_pretrained(lora_save_path)
+                else:
+                    torch.save(model.state_dict(), model_save_path)
             else:
-                torch.save(model.state_dict(), model_save_path)
-        else:
-            epochs_without_improvement += 1
+                epochs_without_improvement += 1
+
+        if hyperparams['use_lora'] == True:
+            if epoch < 8:
+                best_bleu_score = 0 #Lora takes longer
 
         if epochs_without_improvement >= patience and epoch > 15:
             if print_messages:
@@ -360,6 +371,7 @@ def train_model(model, train_data, val_data, device, tokenizer,
     model = model.to(device)
 
     return model
+
 
 def test_model(test_data, test_ids, device, model, tokenizer):
     model.eval()
@@ -395,14 +407,18 @@ def test_model(test_data, test_ids, device, model, tokenizer):
     return results
 
 
-def generate_paraphrases(model, dataloader, device, tokenizer):
+def generate_paraphrases(model, dataset, device, tokenizer):
     model.eval()
     predictions = []
-    references = []
-    inputs = []
+
+    inputs = dataset["sentence1"].tolist()
+    references = dataset["sentence2"].tolist()
+
+    dataloader = transform_data(dataset)
+
     with torch.no_grad():
         for batch in dataloader:
-            input_ids, attention_mask, labels = [tensor.to(device) for tensor in batch]
+            input_ids, attention_mask, labels, indices = [tensor.to(device) for tensor in batch]
 
             # Generate paraphrases
             outputs = model.generate(
@@ -417,18 +433,12 @@ def generate_paraphrases(model, dataloader, device, tokenizer):
                 tokenizer.decode(g, skip_special_tokens=True, clean_up_tokenization_spaces=True)
                 for g in outputs
             ]
-            references.extend([
-                tokenizer.decode(label, skip_special_tokens=True, clean_up_tokenization_spaces=True)
-                for label in labels
-            ])
-            inputs.extend([
-                tokenizer.decode(input_id, skip_special_tokens=True, clean_up_tokenization_spaces=True)
-                for input_id in input_ids
-            ])
+
             predictions.extend(pred_text)
             paraphrases = pd.DataFrame({
-                'references': references,
-                'predictions': predictions
+                'inputs': inputs,
+                'predictions': predictions,
+                'references': references
             })
             return paraphrases
 
@@ -511,8 +521,8 @@ def finetune_paraphrase_generation(args):
     device = torch.device("cuda") if args.use_gpu else torch.device("cpu")
     tokenizer = AutoTokenizer.from_pretrained("facebook/bart-large", local_files_only=True)
 
-    hyperparamer_tuning_mode = False
-    normal_mode = False
+    hyperparamer_tuning_mode = hyperparams['tuning_mode']
+    normal_mode = hyperparams["normal_mode"]
 
     train_dataset = pd.read_csv("data/etpc-paraphrase-train.csv", sep="\t")
     train_dataset = train_dataset if not DEV_MODE else train_dataset[:10]
@@ -548,11 +558,10 @@ def finetune_paraphrase_generation(args):
         evaluator, evaluator_tokenizer = paraphrase_detector_train.load_evaluator(evaluator_model_path, device)
 
         print('Training generator.\n')
-#        model = train_model(model, train_data, val_data, device, tokenizer,
- #                           learning_rate=8e-5, batch_size=hyperparams['batch_size'],
-  #                          patience=hyperparams['patience'], print_messages=True, alpha_ngram=hyperparams["alpha"],
-   #                         alpha_diversity=hyperparams["alpha"], optimizer="Adam",
-    #                        use_scheduler='ReduceLROnPlateau', train_dataset = train_dataset)
+        model = train_model(model, train_data, val_data, device, tokenizer, learning_rate = 8e-5, batch_size=hyperparams['batch_size'],
+                            patience=hyperparams['patience'], print_messages=True, alpha_ngram=hyperparams["alpha"],
+                            alpha_diversity=hyperparams["alpha"], optimizer="Adam",
+                            use_scheduler='ReduceLROnPlateau', train_dataset = train_dataset)
         print('Finished training generator.')
 
         score_before_finetune = evaluate_model(model, val_data, device, tokenizer)
@@ -565,11 +574,14 @@ def finetune_paraphrase_generation(args):
         print(f'Score after fine-tuning with evaluator: {score_after_finetune}\n')
 
     if hyperparams["use_QP"]:
-        qpmodel = bart_generation_with_qp.load_and_train_qp_model()
-        train_data_qp = bart_generation_with_qp.transform_data_with_qualitypredictor(train_dataset, qpmodel, predict_with_qp=True)
+        qpmodel = bart_generation_with_qp.load_and_train_qp_model(train_dataset, device)
+
+        train_data_qp = transform_data(train_dataset, qpmodel=qpmodel, device=device)
 
         model = BartForConditionalGeneration.from_pretrained("facebook/bart-large", local_files_only=True)
         model.to(device)
+
+        print("Training generator.")
         model = train_model(model, train_data_qp, val_data, device, tokenizer,
                             learning_rate=hyperparams['learning_rate'], batch_size=hyperparams['batch_size'],
                             patience=hyperparams['patience'], print_messages=True,
@@ -586,9 +598,12 @@ def finetune_paraphrase_generation(args):
 
         base_model = BartForConditionalGeneration.from_pretrained("facebook/bart-large", local_files_only=True)
 
+        for param in base_model.parameters(): #Just to be absolutely sure
+            param.requires_grad = False
+
         # Configure LoRA
         lora_config = LoraConfig(
-            r=8,  # Low-rank factor
+            r=8,  # rank factor
             lora_alpha=16,  # Scaling factor
             lora_dropout=0.1,  # Dropout rate for LoRA layers
             task_type=TaskType.SEQ_2_SEQ_LM  # Task type for sequence-to-sequence models
@@ -598,9 +613,9 @@ def finetune_paraphrase_generation(args):
         model = get_peft_model(base_model, lora_config)
 
         model.to(device)
-
+        model.print_trainable_parameters()
         model = train_model(model, train_data, val_dataset, device, tokenizer,
-                            learning_rate=1e-4, batch_size=hyperparams['batch_size'],
+                            learning_rate=4e-4, batch_size=hyperparams['batch_size'],
                             patience=hyperparams['patience'], print_messages=True, alpha_ngram=0.001,
                             alpha_diversity=0.001, optimizer="Adam",
                             use_scheduler='ReduceLROnPlateau', train_dataset=train_dataset)
@@ -630,7 +645,6 @@ def finetune_paraphrase_generation(args):
 
 
     if normal_mode == True:  # Todo: This code below is to check loss function engineering, BUT see below
-        print("Adam:")
         model = BartForConditionalGeneration.from_pretrained("facebook/bart-large", local_files_only=True)
         model.to(device)
         model = train_model(model, train_data, val_data, device, tokenizer,
@@ -641,20 +655,8 @@ def finetune_paraphrase_generation(args):
         scores = evaluate_model(model, val_data, device, tokenizer)
         bleu_score, _ = scores.values()
         print(f"The penalized BLEU-score of the model is: {bleu_score:.3f}")
-        del model
-        print("EAdam:")
-        model = BartForConditionalGeneration.from_pretrained("facebook/bart-large", local_files_only=True)
-        model.to(device)
-        model = train_model(model, train_data, val_data, device, tokenizer,
-                            learning_rate=hyperparams['learning_rate'], batch_size=hyperparams['batch_size'],
-                            patience=hyperparams['patience'], print_messages=True, alpha_ngram=0.0,
-                            alpha_diversity=0.0, optimizer="EAdam",
-                            use_scheduler='ReduceLROnPlateau', train_dataset= train_dataset)
-        scores = evaluate_model(model, val_data, device, tokenizer)
-        bleu_score, _ = scores.values()
-        print(f"The penalized BLEU-score of the model is: {bleu_score:.3f}")
-        del model
-
+        paraphrases = generate_paraphrases(model, val_data,  device, tokenizer)
+        print(paraphrases.to_string())
 
 # print(f"The METEOR-score of the model is: {meteor_score:.3f}")
 # print(f"Without training: \n BLEU: {bleu_score_before_training:.3f}")# \n METEOR: {meteor_score_before_training}")
@@ -662,7 +664,7 @@ def finetune_paraphrase_generation(args):
 # del model
 # torch.cuda.empty_cache()
 
-# paraphrases = generate_paraphrases(model, val_data, device, tokenizer)
+#
 # paraphrases.to_csv("predictions/bart/generation_predict.csv", index=False, sep="\t")
 
 

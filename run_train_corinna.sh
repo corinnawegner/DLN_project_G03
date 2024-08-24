@@ -26,7 +26,6 @@ echo "Current node: ${SLURM_NODELIST}"
 # For debugging purposes.
 python --version
 python -m torch.utils.collect_env 2> /dev/null
-python -m spacy download en_core_web_sm
 
 
 # Print out some git info.
