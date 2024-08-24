@@ -1,10 +1,11 @@
 import math
-
+import spacy
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 from base_bert import BertPreTrainedModel
+from tokenizer import BertTokenizer
 from utils import get_extended_attention_mask
 
 
@@ -173,7 +174,22 @@ class BertModel(BertPreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
         self.config = config
+        # Initialize the BERT tokenizer
+        self.tokenizer = BertTokenizer.from_pretrained("bert-base-uncased", local_files_only=True)
 
+        # Initialize the spaCy model
+        spacy.prefer_gpu()
+        self.nlp = spacy.load("en_core_web_sm")
+
+        # Get the POS and NER tags from spaCy
+        pos_tags_spacy = self.nlp.get_pipe("tagger").labels
+        ner_tags_spacy = self.nlp.get_pipe("ner").labels
+
+        # Create a vocabulary dictionary for tags
+        self.pos_tag_vocab = {tag: index + 1 for index, tag in enumerate(pos_tags_spacy)}
+        self.ner_tag_vocab = {tag: index + 1 for index, tag in enumerate(ner_tags_spacy)}
+
+        self.input_cache = {}
         # embedding
         self.word_embedding = nn.Embedding(
             config.vocab_size, config.hidden_size, padding_idx=config.pad_token_id
@@ -197,7 +213,7 @@ class BertModel(BertPreTrainedModel):
 
         self.init_weights()
 
-    def embed(self, input_ids):
+    def embed(self, input_ids, additional_input=False):
         input_shape = input_ids.size()
         seq_length = input_shape[1]
 
@@ -219,14 +235,45 @@ class BertModel(BertPreTrainedModel):
         tk_type_ids = torch.zeros(input_shape, dtype=torch.long, device=input_ids.device)
         tk_type_embeds = self.tk_type_embedding(tk_type_ids)
 
-        ### TODO
-        embeddings = inputs_embeds + pos_embeds + tk_type_embeds
+        if additional_input:
+            all_pos_tags = []
+            all_ner_tags = []
+            for sequence_id in input_ids:
+                sequence_id_tup = tuple(sequence_id.tolist())
+                if sequence_id_tup in self.input_cache:
+                    pos_tags, ner_tags = self.input_cache[sequence_id_tup]
+                else:
+                    tokens = self.tokenizer.convert_ids_to_tokens(sequence_id.tolist())
+                    token_strings = [token for token in tokens if token not in ["[PAD]", "[CLS]", "[SEP]"]]
+                    input_string = self.tokenizer.convert_tokens_to_string(token_strings)
+                    tokenized = self.nlp(input_string)
+                    pos_tags = [0] * len(tokens)
+                    ner_tags = [0] * len(tokens)
+                    counter = -1
+                    for i in range(len(token_strings)):
+                        if not token_strings[i].startswith("##"):
+                            counter += 1
+                        pos_tags[i + 1] = self.pos_tag_vocab.get(tokenized[counter].tag_, 0)
+                        ner_tags[i + 1] = self.ner_tag_vocab.get(tokenized[counter].ent_type_, 0)
+
+                    self.input_cache[sequence_id_tup] = (pos_tags, ner_tags)
+
+                all_pos_tags.append(pos_tags)
+                all_ner_tags.append(ner_tags)
+
+            pos_tags_ids = torch.tensor(all_pos_tags, dtype=torch.long, device=input_ids.device)
+            ner_tags_ids = torch.tensor(all_ner_tags, dtype=torch.long, device=input_ids.device)
+        else:
+            pos_tags_ids = torch.zeros(input_shape, dtype=torch.long, device=input_ids.device)
+            ner_tags_ids = torch.zeros(input_shape, dtype=torch.long, device=input_ids.device)
+
+        pos_tag_embeds = self.pos_tag_embedding(pos_tags_ids)
+        ner_tag_embeds = self.ner_tag_embedding(ner_tags_ids)
+
+        embeddings = inputs_embeds + pos_embeds + tk_type_embeds + pos_tag_embeds + ner_tag_embeds
         embeddings = self.embed_layer_norm(embeddings)
         embeddings = self.embed_dropout(embeddings)
         return embeddings
-        # raise NotImplementedError
-        # Add three embeddings together; then apply embed_layer_norm and dropout and
-        # return the hidden states.
 
     def encode(self, hidden_states, attention_mask):
         """
@@ -247,13 +294,13 @@ class BertModel(BertPreTrainedModel):
 
         return hidden_states
 
-    def forward(self, input_ids, attention_mask):
+    def forward(self, input_ids, attention_mask,additional_input=False):
         """
         input_ids: [batch_size, seq_len], seq_len is the max length of the batch
         attention_mask: same size as input_ids, 1 represents non-padding tokens, 0 represents padding tokens
         """
         # get the embedding for each input token
-        embedding_output = self.embed(input_ids=input_ids)
+        embedding_output = self.embed(input_ids=input_ids,additional_input=additional_input)
 
         # feed to a transformer (a stack of BertLayers)
         sequence_output = self.encode(embedding_output, attention_mask=attention_mask)
