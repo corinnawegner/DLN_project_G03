@@ -71,12 +71,12 @@ hyperparams = {
     'optimizer': args.optimizer,
     'learning_rate': args.learning_rate,
     'batch_size': args.batch_size,
-    'dropout_rate': args.dropout_rate ,
+    'dropout_rate': args.dropout_rate,
     'patience': args.patience,
-    'num_epochs': args.num_epochs ,
-    'alpha': args.alpha ,
-    'POS_NER_tagging': args.POS_NER_tagging ,
-    'l2_regularization': args.l2_regularization ,
+    'num_epochs': args.num_epochs,
+    'alpha': args.alpha,
+    'POS_NER_tagging': args.POS_NER_tagging,
+    'l2_regularization': args.l2_regularization,
     'use_QP': args.use_QP if hasattr(args, 'use_QP') else False,
     'use_lora': args.use_lora if hasattr(args, 'use_lora') else False,
     'use_RL': args.use_RL if hasattr(args, 'use_RL') else False,
@@ -439,12 +439,13 @@ def generate_paraphrases(model, dataset, device, tokenizer):
             ]
 
             predictions.extend(pred_text)
-            paraphrases = pd.DataFrame({
-                'inputs': inputs,
-                'predictions': predictions,
-                'references': references
-            })
-            return paraphrases
+
+    paraphrases = pd.DataFrame({
+        'inputs': inputs,
+        'predictions': predictions,
+        'references': references
+    })
+    return paraphrases
 
 
 def evaluate_model(model, dataset, device, tokenizer, print_messages=True):
@@ -511,8 +512,6 @@ def seed_everything(seed=11711):
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.deterministic = True
-
-
 
 
 def test_model(test_data, test_ids, device, model, tokenizer):
@@ -642,7 +641,7 @@ def finetune_paraphrase_generation(args):
 
         # Configure LoRA
         lora_config = LoraConfig(
-            r=64,  # rank factor
+            r=8,  # rank factor
             lora_alpha=16,  # Scaling factor
             lora_dropout=0.1,  # Dropout rate for LoRA layers
             task_type=TaskType.SEQ_2_SEQ_LM  # Task type for sequence-to-sequence models
@@ -667,6 +666,7 @@ def finetune_paraphrase_generation(args):
         scores = evaluate_model(model, val_data, device, tokenizer)
         bleu_score, _ = scores.values()
         print(f"The penalized BLEU-score of the model is: {bleu_score:.3f}")
+
         paraphrases = generate_paraphrases(model, val_data, device, tokenizer)
         print(paraphrases.to_string())
 
