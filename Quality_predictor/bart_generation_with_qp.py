@@ -1,4 +1,3 @@
-import random
 from Quality_predictor import quality_measure
 from optimizer import AdamW
 import warnings
@@ -26,34 +25,41 @@ if local_hostname == 'Corinna-PC' or local_hostname == "TABLET-TTS0K9R0":  # Tod
 
 TQDM_DISABLE = not DEV_MODE
 
-batch_size = 64 if not DEV_MODE else 1
-
 warnings.filterwarnings("ignore", category=FutureWarning)
 
-r = random.randint(10000, 99999)
-model_save_path = f"models/bart_generation_quality_control_{r}.pt"
-
-hyperparams = {
-    'optimizer': AdamW,
-    'learning_rate': 1e-5,
-    'batch_size': 64,
-    'dropout_rate': 0.1,
-    'patience': 3,
-    'num_epochs': 100 if not DEV_MODE else 10,
-    'alpha': 0.0,
-    'scheduler': "CosineAnnealingLR",
-    'POS_NER_tagging': True  # Set to True to enable POS and NER tagging
-}
-
-
 class QualityPredictor(nn.Module):
+    """
+    A neural network model for predicting quality scores based on input text using a BERT-based transformer.
+
+    Attributes:
+        tokenizer (AutoTokenizer): Tokenizer for converting text into tokens.
+        bert (BertModel): Pre-trained BERT model for extracting text representations.
+        regressor (nn.Linear): Linear layer for regression output based on BERT hidden states.
+    """
     def __init__(self, model_name, num_labels=3):
+        """
+            Initializes the QualityPredictor model.
+
+            Parameters:
+                model_name (str): The name of the pre-trained BERT model to use.
+                num_labels (int): The number of output labels for the regression task.
+        """
         super(QualityPredictor, self).__init__()
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
         self.bert = BertModel.from_pretrained(model_name)
         self.regressor = nn.Linear(self.bert.config.hidden_size, num_labels)
 
     def forward(self, input_ids, attention_mask):
+        """
+            Performs a forward pass through the model.
+
+            Parameters:
+               input_ids (torch.Tensor): Input token IDs.
+               attention_mask (torch.Tensor): Attention mask to avoid padding tokens.
+
+            Returns:
+               torch.Tensor: Predicted logits.
+        """
         # Get hidden states from BERT
         outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask)
         # Pass through regression layer
@@ -61,6 +67,16 @@ class QualityPredictor(nn.Module):
         return logits
 
     def predict(self, texts, device):
+        """
+            Makes predictions on a list of texts.
+
+            Parameters:
+               texts (list of str): List of text inputs to predict.
+               device (torch.device): The device to which the model should be moved.
+
+            Returns:
+               torch.Tensor: Probability scores for each label.
+        """
         self.eval()
         # Ensure the model is on the correct device
         self.to(device)
@@ -78,6 +94,18 @@ class QualityPredictor(nn.Module):
         return probs
 
 def transform_data_qp(dataset, tokenizer, max_length=256):
+    """
+        Transforms the dataset into a DataLoader suitable for training.
+
+        Parameters:
+            dataset (pd.DataFrame): DataFrame containing input text and indices.
+            tokenizer (AutoTokenizer): Tokenizer used to convert text into tokens.
+            max_length (int): Maximum length of the tokenized sequences.
+
+        Returns:
+            DataLoader: DataLoader instance with the transformed dataset.
+    """
+
     input_ids = []
     attention_masks = []
     indices = []
@@ -106,6 +134,18 @@ def transform_data_qp(dataset, tokenizer, max_length=256):
     return DataLoader(dataset_tensor, batch_size=32, shuffle=True)
 
 def train_quality_predictor(model, train_dataset, num_epochs, device):
+    """
+       Trains the QualityPredictor model on the provided dataset.
+
+       Parameters:
+           model (QualityPredictor): The model to be trained.
+           train_dataset (pd.DataFrame): DataFrame containing training data.
+           num_epochs (int): Number of epochs to train the model.
+           device (torch.device): The device to which the model and data should be moved.
+
+       Returns:
+           QualityPredictor: The trained model.
+    """
     train_data = transform_data_qp(train_dataset, tokenizer=model.tokenizer)
     model.to(device)
     model.train()
@@ -120,7 +160,7 @@ def train_quality_predictor(model, train_dataset, num_epochs, device):
         true_vectors.append(true_vector)
 
     # Initialize optimizer and scheduler
-    qp_optimizer = AdamW(model.parameters(), lr=5e-3)  # Find optimal learning rate later
+    qp_optimizer = AdamW(model.parameters(), lr=5e-5)  # Find optimal learning rate later
     qp_scheduler = StepLR(qp_optimizer, step_size=1, gamma=0.95)
     mse = torch.nn.MSELoss()
 
@@ -156,7 +196,16 @@ def train_quality_predictor(model, train_dataset, num_epochs, device):
     return model
 
 def load_and_train_qp_model(train_dataset, device):
-    #df_train_data_qp = bart_generation.transform_data(train_dataset)
+    """
+       Loads and trains a QualityPredictor model.
+
+       Parameters:
+           train_dataset (pd.DataFrame): DataFrame containing the training data.
+           device (torch.device): The device to which the model should be moved.
+
+       Returns:
+           QualityPredictor: The trained QualityPredictor model.
+       """
 
     model_name = "textattack/bert-base-uncased-yelp-polarity"
     num_labels = 3  # Since we are predicting three labels
@@ -164,6 +213,6 @@ def load_and_train_qp_model(train_dataset, device):
     qpmodel.to(device)
 
     print('Training quality predictor')
-    qpmodel = train_quality_predictor(qpmodel, train_dataset, device=device, num_epochs=10 if not DEV_MODE else 1)
+    qpmodel = train_quality_predictor(qpmodel, train_dataset, device=device, num_epochs=20 if not DEV_MODE else 1)
 
     return qpmodel

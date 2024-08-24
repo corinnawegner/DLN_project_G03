@@ -46,11 +46,11 @@ hyperparams = {
     'scheduler': "ReduceLROnPlateau",
     'POS_NER_tagging': True,
     'l2_regularization': 0.01,
-    'use_QP': True,
+    'use_QP': False,
     'use_lora': False,
     'use_RL':  False,
     'tuning_mode': False,
-    'normal_mode': False
+    'normal_mode': True
 }  # Todo: make every function take values from here
 
 if hyperparams['POS_NER_tagging'] == True:
@@ -472,20 +472,19 @@ def get_args():
     parser = argparse.ArgumentParser()
 
     # Adding hyperparameters as command-line arguments
-    parser.add_argument("--optimizer", type=str, default="AdamW", help="Optimizer to use")
+    parser.add_argument("--optimizer", type=str, default="Adam", help="Optimizer to use")
     parser.add_argument("--learning_rate", type=float, default=8e-5, help="Learning rate for the optimizer")
     parser.add_argument("--batch_size", type=int, default=64, help="Batch size for training")
     parser.add_argument("--dropout_rate", type=float, default=0.1, help="Dropout rate for regularization")
     parser.add_argument("--patience", type=int, default=5, help="Patience for early stopping")
     parser.add_argument("--num_epochs", type=int, default=100, help="Number of epochs for training")
     parser.add_argument("--alpha", type=float, default=0.001, help="Alpha value for regularization")
-    parser.add_argument("--scheduler", type=str, default="ReduceLROnPlateau", help="Learning rate scheduler")
     parser.add_argument("--POS_NER_tagging", action="store_true", help="Enable POS and NER tagging")
     parser.add_argument("--l2_regularization", type=float, default=0.01, help="L2 regularization coefficient")
-    parser.add_argument("--use_QP", action="store_true", help="Enable Quantization Parameter")
-    parser.add_argument("--use_lora", action="store_true", help="Enable LoRA (Low-Rank Adaptation)")
-    parser.add_argument("--use_RL", action="store_true", help="Enable Reinforcement Learning")
-    parser.add_argument("--tuning_mode", action="store_true", help="Enable tuning mode")
+    parser.add_argument("--use_QP", action="store_false", help="Enable Quantization Parameter")
+    parser.add_argument("--use_lora", action="store_false", help="Enable LoRA (Low-Rank Adaptation)")
+    parser.add_argument("--use_RL", action="store_false", help="Enable Reinforcement Learning")
+    parser.add_argument("--tuning_mode", action="store_false", help="Enable tuning mode")
     parser.add_argument("--normal_mode", action="store_true", help="Enable normal operation mode")
     parser.add_argument("--seed", type=int, default=11711, help="Random seed")
     parser.add_argument("--use_gpu", action="store_true", help="Use GPU for training")
@@ -504,7 +503,7 @@ def test_model(test_data, test_ids, device, model, tokenizer):
 
     with torch.no_grad():
         for batch in test_data:
-            input_ids, attention_mask, _ = batch
+            input_ids, attention_mask, _, _ = batch
             input_ids = input_ids.to(device)
             attention_mask = attention_mask.to(device)
 
@@ -655,7 +654,6 @@ def finetune_paraphrase_generation(args):
             bleu_score, _ = scores.values()
             list_bleu.append(bleu_score)
             print(f"The penalized BLEU-score for alpha {a} of the model is: {bleu_score:.3f}")
-            del model
         print(f"alpha, bleu: {list_alpha, list_bleu}.")
 
 
@@ -673,13 +671,9 @@ def finetune_paraphrase_generation(args):
         paraphrases = generate_paraphrases(model, val_data,  device, tokenizer)
         print(paraphrases.to_string())
 
-
-    if not DEV_MODE:
-        test_ids = test_dataset["id"]
-        test_results = test_model(test_data, test_ids, device, model, tokenizer)
-        test_results.to_csv(
-            "predictions/bart/etpc-paraphrase-generation-test-output.csv", index=False, sep="\t"
-        )
+    test_ids = test_dataset["id"]
+    test_results = test_model(test_data, test_ids, device, model, tokenizer)
+    test_results.to_csv("predictions/bart/etpc-paraphrase-generation-test-output.csv", index=False, sep="\t")
 
 if __name__ == "__main__":
     args = get_args()
