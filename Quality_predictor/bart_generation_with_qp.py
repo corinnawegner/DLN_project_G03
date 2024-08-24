@@ -1,3 +1,4 @@
+import random
 from Quality_predictor import quality_measure
 from optimizer import AdamW
 import warnings
@@ -10,6 +11,7 @@ from torch.optim import AdamW
 from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import DataLoader, TensorDataset
 from tqdm import tqdm
+from bart_generation import perform_pos_ner
 
 # Load SpaCy model for POS tagging and NER
 nlp = spacy.load("en_core_web_sm")
@@ -26,6 +28,9 @@ if local_hostname == 'Corinna-PC' or local_hostname == "TABLET-TTS0K9R0":  # Tod
 TQDM_DISABLE = not DEV_MODE
 
 warnings.filterwarnings("ignore", category=FutureWarning)
+
+r = random.randint(10000, 99999)
+model_save_path = f"models/bart_generation_quality_control_{r}.pt"
 
 class QualityPredictor(nn.Module):
     """
@@ -110,11 +115,21 @@ def transform_data_qp(dataset, tokenizer, max_length=256):
     attention_masks = []
     indices = []
 
+    SEP = tokenizer.sep_token
+
     for idx, row in tqdm(dataset.iterrows(), total=len(dataset), disable=False):
-        sentence = row['sentence1']
+        sentence_1 = row['sentence1']
+        segment_location_1 = row['sentence1_segment_location']
+        paraphrase_type = row['paraphrase_types']
+
+        pos_tags, entities = perform_pos_ner(sentence_1)
+        pos_tags_str = ' '.join([f"{token}/{tag}" for token, tag in pos_tags])
+        entities_str = ' '.join([f"{ent}/{label}" for ent, label in entities])
+
+        combined_input = f"{sentence_1} {SEP} {segment_location_1} {SEP} {paraphrase_type} {SEP} POS: {pos_tags_str} {SEP} NER: {entities_str}"
 
         encoding = tokenizer(
-            sentence,
+            combined_input,
             max_length=max_length,
             padding='max_length',
             truncation=True,
@@ -160,7 +175,7 @@ def train_quality_predictor(model, train_dataset, num_epochs, device):
         true_vectors.append(true_vector)
 
     # Initialize optimizer and scheduler
-    qp_optimizer = AdamW(model.parameters(), lr=5e-5)  # Find optimal learning rate later
+    qp_optimizer = AdamW(model.parameters(), lr=5e-4)  # Find optimal learning rate later
     qp_scheduler = StepLR(qp_optimizer, step_size=1, gamma=0.95)
     mse = torch.nn.MSELoss()
 
