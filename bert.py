@@ -196,6 +196,8 @@ class BertModel(BertPreTrainedModel):
         )
         self.pos_embedding = nn.Embedding(config.max_position_embeddings, config.hidden_size)
         self.tk_type_embedding = nn.Embedding(config.type_vocab_size, config.hidden_size)
+        self.pos_tag_embedding = nn.Embedding(len(pos_tags_spacy) + 1, config.hidden_size)
+        self.ner_tag_embedding = nn.Embedding(len(ner_tags_spacy) + 1, config.hidden_size)
         self.embed_layer_norm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
         self.embed_dropout = nn.Dropout(config.hidden_dropout_prob)
         # position_ids (1, len position emb) is a constant, register to buffer
