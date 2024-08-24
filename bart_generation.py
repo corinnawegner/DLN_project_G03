@@ -46,8 +46,8 @@ hyperparams = {
     'scheduler': "ReduceLROnPlateau",
     'POS_NER_tagging': True,
     'l2_regularization': 0.01,
-    'use_QP': True,
-    'use_lora': False,
+    'use_QP': False,
+    'use_lora': True,
     'use_RL':  False,
     'tuning_mode': False,
     'normal_mode': False
@@ -599,26 +599,25 @@ def finetune_paraphrase_generation(args):
 
         print("Training generator.")
         model = train_model(model, train_data_qp, val_data, device, tokenizer,
-                            learning_rate=hyperparams['learning_rate'], batch_size=hyperparams['batch_size'],
-                            patience=hyperparams['patience'], print_messages=True,
-                            use_scheduler='ReduceLROnPlateau', qpmodel = qpmodel, train_dataset= train_dataset)
+        learning_rate = hyperparams['learning_rate'], batch_size = hyperparams['batch_size'],
+        patience = hyperparams['patience'], print_messages = True, alpha_ngram = 0.001,
+        alpha_diversity = 0.001, optimizer = "Adam", qpmodel=qpmodel, train_dataset = train_dataset)
 
         print("Training finished.")
 
         scores = evaluate_model(model, val_data, device, tokenizer)
         bleu_score, _ = scores.values()
         print(f"The penalized BLEU-score of the model is: {bleu_score:.3f}")
+        paraphrases = generate_paraphrases(model, val_data[:15],  device, tokenizer)
+        print(paraphrases.to_string())
 
     if hyperparams['use_lora'] == True:
 
         base_model = BartForConditionalGeneration.from_pretrained("facebook/bart-large", local_files_only=True)
 
-        for param in base_model.parameters(): #Just to be absolutely sure
-            param.requires_grad = False
-
         # Configure LoRA
         lora_config = LoraConfig(
-            r=8,  # rank factor
+            r=8, # rank factor
             lora_alpha=16,  # Scaling factor
             lora_dropout=0.1,  # Dropout rate for LoRA layers
             task_type=TaskType.SEQ_2_SEQ_LM  # Task type for sequence-to-sequence models
@@ -627,16 +626,23 @@ def finetune_paraphrase_generation(args):
         # Wrap the model with LoRA
         model = get_peft_model(base_model, lora_config)
 
+        for param in model.base_model.parameters(): #Just to be absolutely sure
+            if param.requires_grad == True:
+                print("Attention: Base model trainable in LoRA configuration.")
+
         model.to(device)
         model.print_trainable_parameters()
         model = train_model(model, train_data, val_dataset, device, tokenizer,
-                            learning_rate=7e-4, batch_size=hyperparams['batch_size'],
+                            learning_rate=0.0, batch_size=hyperparams['batch_size'],
                             patience=hyperparams['patience'], print_messages=True, alpha_ngram=0.001,
                             alpha_diversity=0.001, optimizer="Adam",
                             use_scheduler='ReduceLROnPlateau', train_dataset=train_dataset)
         scores = evaluate_model(model, val_data, device, tokenizer)
         bleu_score, _ = scores.values()
         print(f"The penalized BLEU-score of the model is: {bleu_score:.3f}")
+
+        paraphrases = generate_paraphrases(model, val_data[:15],  device, tokenizer)
+        print(paraphrases.to_string())
 
     if hyperparamer_tuning_mode == True:
 
@@ -650,7 +656,7 @@ def finetune_paraphrase_generation(args):
                             learning_rate=8e-5, batch_size=hyperparams['batch_size'],
                             patience=hyperparams['patience'], print_messages=True, alpha_ngram=a,
                             alpha_diversity=a, optimizer="Adam",
-                            use_scheduler='ReduceLROnPlateau', train_dataset = train_dataset)  # todo: Determine best scheduler first  # todo: Determine best scheduler first, Remember to put the POS NER hyperparameter to true
+                            use_scheduler='ReduceLROnPlateau', train_dataset = train_dataset)
             scores = evaluate_model(model, val_data, device, tokenizer)
             bleu_score, _ = scores.values()
             list_bleu.append(bleu_score)
@@ -680,6 +686,7 @@ def finetune_paraphrase_generation(args):
         test_results.to_csv(
             "predictions/bart/etpc-paraphrase-generation-test-output.csv", index=False, sep="\t"
         )
+
 
 if __name__ == "__main__":
     args = get_args()
