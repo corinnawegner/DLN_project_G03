@@ -1,19 +1,11 @@
 import argparse
-import paraphrase_generation_RL.paraphrase_detector_train
-from optimizer import AdamW
 from peft import PeftModel, PeftConfig
-#import qp_model
-from bleurt_pytorch import BleurtForSequenceClassification, BleurtTokenizer
-#from nltk.translate.meteor_score import single_meteor_score
-from torch.cuda.amp import autocast, GradScaler
-#from penalty_function import ngram_penalty, diversity_penalty#, length_penalty
 import random
 import numpy as np
 import pandas as pd
 import spacy
 import torch
 from sacrebleu.metrics import BLEU
-# from nltk.translate.meteor_score import single_meteor_score
 from torch.utils.data import DataLoader, TensorDataset
 from tqdm import tqdm
 from transformers import AutoTokenizer, BartForConditionalGeneration
@@ -24,10 +16,8 @@ import time
 import warnings
 import socket
 import os
-from torch.optim.lr_scheduler import CosineAnnealingLR, ReduceLROnPlateau, MultiStepLR, OneCycleLR
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.optim import Adam
-AdamW = Adam
-
 
 # import nltk
 # nltk.download('wordnet')
@@ -46,7 +36,7 @@ TQDM_DISABLE = not DEV_MODE
 warnings.filterwarnings("ignore", category=FutureWarning)
 
 hyperparams = {
-    'optimizer': AdamW,
+    'optimizer': Adam,
     'learning_rate': 8e-5,
     'batch_size': 64,
     'dropout_rate': 0.1,
@@ -58,7 +48,7 @@ hyperparams = {
     'l2_regularization': 0.01,
     'use_QP': True,
     'use_lora': False,
-    'use_RL': False,
+    'use_RL':  False,
     'tuning_mode': False,
     'normal_mode': False
 }  # Todo: make every function take values from here
@@ -69,7 +59,6 @@ if hyperparams['POS_NER_tagging'] == True:
 if hyperparams["use_QP"] == True:
     from Quality_predictor import bart_generation_with_qp
 
-
 if hyperparams['use_lora'] == True:
     from peft import get_peft_model, LoraConfig, TaskType
 
@@ -77,7 +66,7 @@ if hyperparams['use_RL'] == True:
     from paraphrase_generation_RL import paraphrase_detector_train
     evaluator_model_path = "models/finetune-10-1e-05-sts.pt"
     if DEV_MODE:
-        evaluator_model_path = r"C:\Users\corin\OneDrive\Physik Master\SoSe 24\Deep Learning for Natural Language Processing\Project\models\sts-finetune-10-1e-05.pt"  # models/finetune-10-1e-05-qqp.pt"
+        evaluator_model_path = r"C:\Users\corin\OneDrive\Physik Master\SoSe 24\Deep Learning for Natural Language Processing\Project\models\qqp-finetune-10-1e-05.pt"  # models/finetune-10-1e-05-qqp.pt"
 
 # Define a model save path
 r = random.randint(10000, 99999)
@@ -136,7 +125,10 @@ def transform_data(dataset, max_length=256, use_tagging=hyperparams['POS_NER_tag
         else:
             combined_input = f"{sentence_1} {SEP} {segment_location_1} {SEP} {paraphrase_type}"
         if qpmodel is not None:
+            qpmodel.to(device)
             quality_vector = qpmodel.predict(sentence_1, device)  # Assuming qpmodel is callable and returns a tensor
+            quality_vector = quality_vector.to(device)
+
             quality_vector_str = ' '.join(map(str, quality_vector.tolist()))
             combined_input += f" {SEP} QV: {quality_vector_str}"
 
@@ -180,9 +172,10 @@ def transform_data(dataset, max_length=256, use_tagging=hyperparams['POS_NER_tag
 
 def train_model(model, train_data, val_data, device, tokenizer,
                 learning_rate=hyperparams['learning_rate'], batch_size=hyperparams['batch_size'], optimizer="Adam", l2_lambda=hyperparams["l2_regularization"],
-                patience=5, use_scheduler="ReduceLROnPlateau", print_messages=True,
+                patience=5, print_messages=True,
                 alpha_ngram=0.0, alpha_diversity=0.0, train_dataset = None, # This line is for loss function engineering
-                qpmodel = None): # This line is for QP
+                qpmodel = None,  # This line is for QP
+                use_scheduler="ReduceLROnPlateau"):
     """
     Train a model.
 
@@ -218,7 +211,7 @@ def train_model(model, train_data, val_data, device, tokenizer,
 
     val_dataloader = transform_data(val_data)
     if hyperparams['use_QP'] == True:
-        val_dataloader = transform_data(val_data, qpmodel=qpmodel)
+        val_dataloader = transform_data(val_data, qpmodel=qpmodel, device=device)
 
     progress_bar = tqdm(range(num_epochs * len(train_data) // accumulate_steps), disable=TQDM_DISABLE)
 
@@ -226,7 +219,7 @@ def train_model(model, train_data, val_data, device, tokenizer,
 
     # Initialize optimizer
     if optimizer == "Adam":
-        optimizer = AdamW(model.parameters(), lr=learning_rate)
+        optimizer = Adam(model.parameters(), lr=learning_rate)
     elif optimizer == "EAdam":
         optimizer = EAdam(model.parameters(), lr=learning_rate)
     else:
@@ -238,7 +231,7 @@ def train_model(model, train_data, val_data, device, tokenizer,
     scaler = GradScaler()
 
     bleu_scores = []
-    best_bleu_score = -10
+    best_bleu_score = 0
     best_epoch = 0
     epochs_without_improvement = 0
 
@@ -373,40 +366,6 @@ def train_model(model, train_data, val_data, device, tokenizer,
     return model
 
 
-def test_model(test_data, test_ids, device, model, tokenizer):
-    model.eval()
-    generated_sentences = []
-
-    with torch.no_grad():
-        for batch in test_data:
-            input_ids, attention_mask, _ = batch
-            input_ids = input_ids.to(device)
-            attention_mask = attention_mask.to(device)
-
-            # Generate paraphrases
-            outputs = model.generate(
-                input_ids,
-                attention_mask=attention_mask,
-                max_length=50,
-                num_beams=5,
-                early_stopping=True,
-            )
-
-            pred_text = [
-                tokenizer.decode(g, skip_special_tokens=True, clean_up_tokenization_spaces=True)
-                for g in outputs
-            ]
-
-            generated_sentences.extend(pred_text)
-
-    results = pd.DataFrame({
-        'id': test_ids,
-        'Generated_sentence2': generated_sentences
-    })
-
-    return results
-
-
 def generate_paraphrases(model, dataset, device, tokenizer):
     model.eval()
     predictions = []
@@ -511,10 +470,66 @@ def seed_everything(seed=11711):
 
 def get_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--seed", type=int, default=11711)
-    parser.add_argument("--use_gpu", action="store_true")
+
+    # Adding hyperparameters as command-line arguments
+    parser.add_argument("--optimizer", type=str, default="AdamW", help="Optimizer to use")
+    parser.add_argument("--learning_rate", type=float, default=8e-5, help="Learning rate for the optimizer")
+    parser.add_argument("--batch_size", type=int, default=64, help="Batch size for training")
+    parser.add_argument("--dropout_rate", type=float, default=0.1, help="Dropout rate for regularization")
+    parser.add_argument("--patience", type=int, default=5, help="Patience for early stopping")
+    parser.add_argument("--num_epochs", type=int, default=100, help="Number of epochs for training")
+    parser.add_argument("--alpha", type=float, default=0.001, help="Alpha value for regularization")
+    parser.add_argument("--scheduler", type=str, default="ReduceLROnPlateau", help="Learning rate scheduler")
+    parser.add_argument("--POS_NER_tagging", action="store_true", help="Enable POS and NER tagging")
+    parser.add_argument("--l2_regularization", type=float, default=0.01, help="L2 regularization coefficient")
+    parser.add_argument("--use_QP", action="store_true", help="Enable Quantization Parameter")
+    parser.add_argument("--use_lora", action="store_true", help="Enable LoRA (Low-Rank Adaptation)")
+    parser.add_argument("--use_RL", action="store_true", help="Enable Reinforcement Learning")
+    parser.add_argument("--tuning_mode", action="store_true", help="Enable tuning mode")
+    parser.add_argument("--normal_mode", action="store_true", help="Enable normal operation mode")
+    parser.add_argument("--seed", type=int, default=11711, help="Random seed")
+    parser.add_argument("--use_gpu", action="store_true", help="Use GPU for training")
+
     args = parser.parse_args()
+
+    # Adjust num_epochs based on DEV_MODE if necessary
+    if 'DEV_MODE' in globals() and DEV_MODE:
+        args.num_epochs = 2
+
     return args
+
+def test_model(test_data, test_ids, device, model, tokenizer):
+    model.eval()
+    generated_sentences = []
+
+    with torch.no_grad():
+        for batch in test_data:
+            input_ids, attention_mask, _ = batch
+            input_ids = input_ids.to(device)
+            attention_mask = attention_mask.to(device)
+
+            # Generate paraphrases
+            outputs = model.generate(
+                input_ids,
+                attention_mask=attention_mask,
+                max_length=50,
+                num_beams=5,
+                early_stopping=True,
+            )
+
+            pred_text = [
+                tokenizer.decode(g, skip_special_tokens=True, clean_up_tokenization_spaces=True)
+                for g in outputs
+            ]
+
+            generated_sentences.extend(pred_text)
+
+    results = pd.DataFrame({
+        'id': test_ids,
+        'Generated_sentence2': generated_sentences
+    })
+
+    return results
 
 
 def finetune_paraphrase_generation(args):
@@ -543,7 +558,7 @@ def finetune_paraphrase_generation(args):
 
     test_dataset = pd.read_csv("data/etpc-paraphrase-generation-test-student.csv", sep="\t")
     test_dataset = test_dataset if not DEV_MODE else test_dataset[:10]  # todo: put back at the end
-    #test_data = transform_data(test_dataset)
+    test_data = transform_data(test_dataset)
 
     if hyperparams["use_RL"]:
         from paraphrase_generation_RL import paraphrase_detector_train
@@ -575,6 +590,7 @@ def finetune_paraphrase_generation(args):
 
     if hyperparams["use_QP"]:
         qpmodel = bart_generation_with_qp.load_and_train_qp_model(train_dataset, device)
+        qpmodel.to(device)
 
         train_data_qp = transform_data(train_dataset, qpmodel=qpmodel, device=device)
 
@@ -592,7 +608,6 @@ def finetune_paraphrase_generation(args):
         scores = evaluate_model(model, val_data, device, tokenizer)
         bleu_score, _ = scores.values()
         print(f"The penalized BLEU-score of the model is: {bleu_score:.3f}")
-        return
 
     if hyperparams['use_lora'] == True:
 
@@ -615,7 +630,7 @@ def finetune_paraphrase_generation(args):
         model.to(device)
         model.print_trainable_parameters()
         model = train_model(model, train_data, val_dataset, device, tokenizer,
-                            learning_rate=4e-4, batch_size=hyperparams['batch_size'],
+                            learning_rate=7e-4, batch_size=hyperparams['batch_size'],
                             patience=hyperparams['patience'], print_messages=True, alpha_ngram=0.001,
                             alpha_diversity=0.001, optimizer="Adam",
                             use_scheduler='ReduceLROnPlateau', train_dataset=train_dataset)
@@ -649,8 +664,8 @@ def finetune_paraphrase_generation(args):
         model.to(device)
         model = train_model(model, train_data, val_data, device, tokenizer,
                             learning_rate=hyperparams['learning_rate'], batch_size=hyperparams['batch_size'],
-                            patience=hyperparams['patience'], print_messages=True, alpha_ngram=0.0,
-                            alpha_diversity=0.0, optimizer="Adam",
+                            patience=hyperparams['patience'], print_messages=True, alpha_ngram=0.001,
+                            alpha_diversity=0.001, optimizer="Adam",
                             use_scheduler='ReduceLROnPlateau', train_dataset = train_dataset)
         scores = evaluate_model(model, val_data, device, tokenizer)
         bleu_score, _ = scores.values()
@@ -658,26 +673,13 @@ def finetune_paraphrase_generation(args):
         paraphrases = generate_paraphrases(model, val_data,  device, tokenizer)
         print(paraphrases.to_string())
 
-# print(f"The METEOR-score of the model is: {meteor_score:.3f}")
-# print(f"Without training: \n BLEU: {bleu_score_before_training:.3f}")# \n METEOR: {meteor_score_before_training}")
-# Clear GPU memory
-# del model
-# torch.cuda.empty_cache()
 
-#
-# paraphrases.to_csv("predictions/bart/generation_predict.csv", index=False, sep="\t")
-
-
-# test_ids = test_dataset["id"]
-# bleu_test = evaluate_model_on_testset(model, test_dataset, device, tokenizer)
-# print(f"Bleu test: {bleu_test}")
-
-
-# if not DEV_MODE:
-# test_results = test_model(test_data, test_ids, device, model, tokenizer)
-#    test_results.to_csv(
-#        "predictions/bart/etpc-paraphrase-generation-test-output.csv", index=False, sep="\t"
-#    )
+    if not DEV_MODE:
+        test_ids = test_dataset["id"]
+        test_results = test_model(test_data, test_ids, device, model, tokenizer)
+        test_results.to_csv(
+            "predictions/bart/etpc-paraphrase-generation-test-output.csv", index=False, sep="\t"
+        )
 
 if __name__ == "__main__":
     args = get_args()

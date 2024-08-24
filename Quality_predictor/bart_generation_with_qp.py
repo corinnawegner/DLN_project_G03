@@ -1,33 +1,16 @@
-import argparse
 import random
-import numpy as np
-import pandas as pd
-from torch.optim.lr_scheduler import StepLR
-from transformers import ElectraTokenizer, ElectraModel
-import torch
-from sacrebleu.metrics import BLEU
-from torch.utils.data import DataLoader, TensorDataset
-from tqdm import tqdm
-from transformers import AutoTokenizer, BartForConditionalGeneration
-
-import bart_generation
 from Quality_predictor import quality_measure
 from optimizer import AdamW
-import torch
-from transformers import AutoTokenizer, BertForSequenceClassification
-
-import torch
-from transformers import AutoTokenizer, BertForSequenceClassification
-import qp_model as qm
 import warnings
 import socket
-from bleurt_pytorch import BleurtForSequenceClassification, BleurtTokenizer
-#from nltk.translate.meteor_score import single_meteor_score
-from torch.cuda.amp import autocast, GradScaler
-#from penalty_function import ngram_penalty, diversity_penalty#, length_penalty
-import time
 import spacy
-from bart_generation import transform_data
+from transformers import BertModel, AutoTokenizer
+import torch
+import torch.nn as nn
+from torch.optim import AdamW
+from torch.optim.lr_scheduler import StepLR
+from torch.utils.data import DataLoader, TensorDataset
+from tqdm import tqdm
 
 # Load SpaCy model for POS tagging and NER
 nlp = spacy.load("en_core_web_sm")
@@ -61,21 +44,7 @@ hyperparams = {
     'scheduler': "CosineAnnealingLR",
     'POS_NER_tagging': True  # Set to True to enable POS and NER tagging
 }
-from transformers import AutoTokenizer, BertForSequenceClassification
-import torch
-from transformers import AutoTokenizer, BertForSequenceClassification
-import torch
 
-from transformers import AutoTokenizer, BertForSequenceClassification
-import torch
-
-from transformers import BertModel, AutoTokenizer
-import torch
-import torch.nn as nn
-from torch.optim import AdamW
-from torch.optim.lr_scheduler import StepLR
-from torch.utils.data import DataLoader, TensorDataset
-from tqdm import tqdm
 
 class QualityPredictor(nn.Module):
     def __init__(self, model_name, num_labels=3):
@@ -93,11 +62,18 @@ class QualityPredictor(nn.Module):
 
     def predict(self, texts, device):
         self.eval()
+        # Ensure the model is on the correct device
+        self.to(device)
+
+        # Tokenize and move inputs to the correct device
         inputs = self.tokenizer(texts, return_tensors="pt", padding=True, truncation=True, max_length=256)
-        inputs = {k: v.to(device) for k, v in inputs.items()}
+        inputs = {k: v.to(device) for k, v in inputs.items()}  # Move inputs to the correct device
 
         with torch.no_grad():
             logits = self(inputs['input_ids'], inputs['attention_mask'])
+
+        # Ensure logits are on the correct device
+        logits = logits.to(device)
         probs = torch.sigmoid(logits)  # Apply sigmoid to ensure output is between 0 and 1
         return probs
 
@@ -156,9 +132,6 @@ def train_quality_predictor(model, train_dataset, num_epochs, device):
         for batch in tqdm(train_data, disable=TQDM_DISABLE):
             input_ids, attention_mask, indices = [tensor.to(device) for tensor in batch]
 
-            print("Input IDs shape:", input_ids.shape)
-            print("Attention Mask shape:", attention_mask.shape)
-
             batch_indices = indices.tolist()
             true_vectors_batch = torch.tensor([true_vectors[idx] for idx in batch_indices], dtype=torch.float).to(device)
 
@@ -166,7 +139,7 @@ def train_quality_predictor(model, train_dataset, num_epochs, device):
 
             # Forward pass using the model inside qpmodel
             outputs = model(input_ids=input_ids, attention_mask=attention_mask)
-            print(f"outputs: {outputs}")
+
             # Compute loss
             loss = mse(outputs, true_vectors_batch)
             loss.backward()  # Backpropagation
@@ -188,7 +161,7 @@ def load_and_train_qp_model(train_dataset, device):
     model_name = "textattack/bert-base-uncased-yelp-polarity"
     num_labels = 3  # Since we are predicting three labels
     qpmodel = QualityPredictor(model_name=model_name, num_labels=num_labels)
-    #qpmodel.to(device)
+    qpmodel.to(device)
 
     print('Training quality predictor')
     qpmodel = train_quality_predictor(qpmodel, train_dataset, device=device, num_epochs=10 if not DEV_MODE else 1)
