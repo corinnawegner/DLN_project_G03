@@ -35,23 +35,52 @@ TQDM_DISABLE = not DEV_MODE
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 
+def get_args():
+    parser = argparse.ArgumentParser()
+
+    # Adding hyperparameters as command-line arguments
+    parser.add_argument("--optimizer", type=str, default="Adam", help="Optimizer to use")
+    parser.add_argument("--learning_rate", type=float, default=8e-5, help="Learning rate for the optimizer")
+    parser.add_argument("--batch_size", type=int, default=64, help="Batch size for training")
+    parser.add_argument("--dropout_rate", type=float, default=0.1, help="Dropout rate for regularization")
+    parser.add_argument("--patience", type=int, default=5, help="Patience for early stopping")
+    parser.add_argument("--num_epochs", type=int, default=100, help="Number of epochs for training")
+    parser.add_argument("--alpha", type=float, default=0.001, help="Alpha value for regularization")
+    parser.add_argument("--POS_NER_tagging", action="store_true", help="Enable POS and NER tagging")
+    parser.add_argument("--l2_regularization", type=float, default=0.01, help="L2 regularization coefficient")
+    parser.add_argument("--use_QP", action="store_false", help="Enable Quantization Parameter")
+    parser.add_argument("--use_lora", action="store_false", help="Enable LoRA (Low-Rank Adaptation)")
+    parser.add_argument("--use_RL", action="store_false", help="Enable Reinforcement Learning")
+    parser.add_argument("--tuning_mode", action="store_false", help="Enable tuning mode")
+    parser.add_argument("--normal_mode", action="store_true", help="Enable normal operation mode")
+    parser.add_argument("--seed", type=int, default=11711, help="Random seed")
+    parser.add_argument("--use_gpu", action="store_true", help="Use GPU for training")
+
+    args = parser.parse_args()
+
+    # Adjust num_epochs based on DEV_MODE if necessary
+    if 'DEV_MODE' in globals() and DEV_MODE:
+        args.num_epochs = 2
+
+    return args
+
+args = get_args()
 hyperparams = {
-    'optimizer': Adam,
-    'learning_rate': 8e-5,
-    'batch_size': 64,
-    'dropout_rate': 0.1,
-    'patience': 5,
-    'num_epochs': 100 if not DEV_MODE else 2,
-    'alpha': 0.001,
-    'scheduler': "ReduceLROnPlateau",
-    'POS_NER_tagging': True,
-    'l2_regularization': 0.01,
-    'use_QP': False,
-    'use_lora': False,
-    'use_RL':  False,
-    'tuning_mode': False,
-    'normal_mode': True
-}  # Todo: make every function take values from here
+    'optimizer': args.optimizer,
+    'learning_rate': args.learning_rate,
+    'batch_size': args.batch_size,
+    'dropout_rate': args.dropout_rate ,
+    'patience': args.patience,
+    'num_epochs': args.num_epochs ,
+    'alpha': args.alpha ,
+    'POS_NER_tagging': args.POS_NER_tagging ,
+    'l2_regularization': args.l2_regularization ,
+    'use_QP': args.use_QP,
+    'use_lora': args.use_lora,
+    'use_RL': args.use_RL,
+    'tuning_mode': args.tuning_mode,
+    'normal_mode': args.normal_mode
+}
 
 if hyperparams['POS_NER_tagging'] == True:
     nlp = spacy.load("en_core_web_sm")
@@ -240,6 +269,11 @@ def train_model(model, train_data, val_data, device, tokenizer,
     for epoch in range(num_epochs):
         torch.cuda.empty_cache()
         model.train()
+
+        if hyperparams['use_lora'] == True:
+            trainable_parameters = sum(p.numel() for p in model.base_model.parameters() if p.requires_grad)
+            print(f"Number of trainable parameters: {trainable_parameters}")
+
         epoch_start_time = time.time()
         for i, batch in enumerate(train_data):
             input_ids, attention_mask, labels, indices = [tensor.to(device) for tensor in batch]
@@ -379,14 +413,23 @@ def generate_paraphrases(model, dataset, device, tokenizer):
         for batch in dataloader:
             input_ids, attention_mask, labels, indices = [tensor.to(device) for tensor in batch]
 
-            # Generate paraphrases
-            outputs = model.generate(
-                input_ids,
-                attention_mask=attention_mask,
-                max_length=50,
-                num_beams=5,
-                early_stopping=True,
-            )
+            if hyperparams['use_lora']:
+                outputs = model.generate(
+                    input_ids=input_ids,
+                    attention_mask=attention_mask,
+                    max_length=50,
+                    num_beams=5,
+                    early_stopping=True,
+                )
+            else:
+                # Generate paraphrases
+                outputs = model.generate(
+                    input_ids,
+                    attention_mask=attention_mask,
+                    max_length=50,
+                    num_beams=5,
+                    early_stopping=True,
+                )
 
             pred_text = [
                 tokenizer.decode(g, skip_special_tokens=True, clean_up_tokenization_spaces=True)
@@ -468,34 +511,7 @@ def seed_everything(seed=11711):
     torch.backends.cudnn.deterministic = True
 
 
-def get_args():
-    parser = argparse.ArgumentParser()
 
-    # Adding hyperparameters as command-line arguments
-    parser.add_argument("--optimizer", type=str, default="Adam", help="Optimizer to use")
-    parser.add_argument("--learning_rate", type=float, default=8e-5, help="Learning rate for the optimizer")
-    parser.add_argument("--batch_size", type=int, default=64, help="Batch size for training")
-    parser.add_argument("--dropout_rate", type=float, default=0.1, help="Dropout rate for regularization")
-    parser.add_argument("--patience", type=int, default=5, help="Patience for early stopping")
-    parser.add_argument("--num_epochs", type=int, default=100, help="Number of epochs for training")
-    parser.add_argument("--alpha", type=float, default=0.001, help="Alpha value for regularization")
-    parser.add_argument("--POS_NER_tagging", action="store_true", help="Enable POS and NER tagging")
-    parser.add_argument("--l2_regularization", type=float, default=0.01, help="L2 regularization coefficient")
-    parser.add_argument("--use_QP", action="store_false", help="Enable Quantization Parameter")
-    parser.add_argument("--use_lora", action="store_false", help="Enable LoRA (Low-Rank Adaptation)")
-    parser.add_argument("--use_RL", action="store_false", help="Enable Reinforcement Learning")
-    parser.add_argument("--tuning_mode", action="store_false", help="Enable tuning mode")
-    parser.add_argument("--normal_mode", action="store_true", help="Enable normal operation mode")
-    parser.add_argument("--seed", type=int, default=11711, help="Random seed")
-    parser.add_argument("--use_gpu", action="store_true", help="Use GPU for training")
-
-    args = parser.parse_args()
-
-    # Adjust num_epochs based on DEV_MODE if necessary
-    if 'DEV_MODE' in globals() and DEV_MODE:
-        args.num_epochs = 2
-
-    return args
 
 def test_model(test_data, test_ids, device, model, tokenizer):
     model.eval()
@@ -586,6 +602,8 @@ def finetune_paraphrase_generation(args):
 
         score_after_finetune = evaluate_model(model, val_data, device, tokenizer)
         print(f'Score after fine-tuning with evaluator: {score_after_finetune}\n')
+        paraphrases = generate_paraphrases(model, val_data, device, tokenizer)
+        print(paraphrases.to_string())
 
     if hyperparams["use_QP"]:
         qpmodel = bart_generation_with_qp.load_and_train_qp_model(train_dataset, device)
@@ -607,17 +625,22 @@ def finetune_paraphrase_generation(args):
         scores = evaluate_model(model, val_data, device, tokenizer)
         bleu_score, _ = scores.values()
         print(f"The penalized BLEU-score of the model is: {bleu_score:.3f}")
+        paraphrases = generate_paraphrases(model, val_data, device, tokenizer)
+        print(paraphrases.to_string())
 
     if hyperparams['use_lora'] == True:
 
         base_model = BartForConditionalGeneration.from_pretrained("facebook/bart-large", local_files_only=True)
 
-        for param in base_model.parameters(): #Just to be absolutely sure
-            param.requires_grad = False
+        trainable_parameters = sum(p.numel() for p in base_model.parameters() if p.requires_grad)
+        print(f"Number of trainable parameters: {trainable_parameters}")
+
+      #  for param in base_model.parameters(): #Just to be absolutely sure
+       #     param.requires_grad = False
 
         # Configure LoRA
         lora_config = LoraConfig(
-            r=8,  # rank factor
+            r=64,  # rank factor
             lora_alpha=16,  # Scaling factor
             lora_dropout=0.1,  # Dropout rate for LoRA layers
             task_type=TaskType.SEQ_2_SEQ_LM  # Task type for sequence-to-sequence models
@@ -626,16 +649,24 @@ def finetune_paraphrase_generation(args):
         # Wrap the model with LoRA
         model = get_peft_model(base_model, lora_config)
 
+   #     for param in model.base_model.parameters():
+    #        param.requires_grad = False
+
+        trainable_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        print(f"Number of trainable parameters: {trainable_parameters}")
+
         model.to(device)
         model.print_trainable_parameters()
         model = train_model(model, train_data, val_dataset, device, tokenizer,
-                            learning_rate=7e-4, batch_size=hyperparams['batch_size'],
+                            learning_rate=2e-4, batch_size=hyperparams['batch_size'],
                             patience=hyperparams['patience'], print_messages=True, alpha_ngram=0.001,
                             alpha_diversity=0.001, optimizer="Adam",
                             use_scheduler='ReduceLROnPlateau', train_dataset=train_dataset)
         scores = evaluate_model(model, val_data, device, tokenizer)
         bleu_score, _ = scores.values()
         print(f"The penalized BLEU-score of the model is: {bleu_score:.3f}")
+        paraphrases = generate_paraphrases(model, val_data, device, tokenizer)
+        print(paraphrases.to_string())
 
     if hyperparamer_tuning_mode == True:
 
