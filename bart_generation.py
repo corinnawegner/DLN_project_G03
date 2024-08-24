@@ -38,7 +38,6 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 def get_args():
     parser = argparse.ArgumentParser()
 
-    # Adding hyperparameters as command-line arguments
     parser.add_argument("--optimizer", type=str, default="Adam", help="Optimizer to use")
     parser.add_argument("--learning_rate", type=float, default=8e-5, help="Learning rate for the optimizer")
     parser.add_argument("--batch_size", type=int, default=64, help="Batch size for training")
@@ -48,13 +47,16 @@ def get_args():
     parser.add_argument("--alpha", type=float, default=0.001, help="Alpha value for regularization")
     parser.add_argument("--POS_NER_tagging", action="store_true", help="Enable POS and NER tagging")
     parser.add_argument("--l2_regularization", type=float, default=0.01, help="L2 regularization coefficient")
-    parser.add_argument("--use_QP", action="store_false", help="Enable Quantization Parameter")
-    parser.add_argument("--use_lora", action="store_false", help="Enable LoRA (Low-Rank Adaptation)")
-    parser.add_argument("--use_RL", action="store_false", help="Enable Reinforcement Learning")
-    parser.add_argument("--tuning_mode", action="store_false", help="Enable tuning mode")
-    parser.add_argument("--normal_mode", action="store_true", help="Enable normal operation mode")
     parser.add_argument("--seed", type=int, default=11711, help="Random seed")
     parser.add_argument("--use_gpu", action="store_true", help="Use GPU for training")
+
+    # Creating a mutually exclusive group for conflicting arguments
+    mode_group = parser.add_mutually_exclusive_group()
+    mode_group.add_argument("--use_QP", action="store_true", help="Enable Quantization Parameter")
+    mode_group.add_argument("--use_lora", action="store_true", help="Enable LoRA (Low-Rank Adaptation)")
+    mode_group.add_argument("--use_RL", action="store_true", help="Enable Reinforcement Learning")
+    mode_group.add_argument("--tuning_mode", action="store_true", help="Enable tuning mode")
+    mode_group.add_argument("--normal_mode", action="store_true", help="Enable normal operation mode")
 
     args = parser.parse_args()
 
@@ -75,11 +77,11 @@ hyperparams = {
     'alpha': args.alpha ,
     'POS_NER_tagging': args.POS_NER_tagging ,
     'l2_regularization': args.l2_regularization ,
-    'use_QP': args.use_QP,
-    'use_lora': args.use_lora,
-    'use_RL': args.use_RL,
-    'tuning_mode': args.tuning_mode,
-    'normal_mode': args.normal_mode
+    'use_QP': args.use_QP if hasattr(args, 'use_QP') else False,
+    'use_lora': args.use_lora if hasattr(args, 'use_lora') else False,
+    'use_RL': args.use_RL if hasattr(args, 'use_RL') else False,
+    'tuning_mode': args.tuning_mode if hasattr(args, 'tuning_mode') else False,
+    'normal_mode': args.normal_mode if hasattr(args, 'normal_mode') else False,
 }
 
 if hyperparams['POS_NER_tagging'] == True:
