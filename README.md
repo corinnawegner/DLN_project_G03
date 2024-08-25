@@ -134,19 +134,20 @@ Based on Xinyan Xiao, et al.([Enhancing Pre-Trained Language Representations wit
 
 A common problem occurring in the generation task is that the model learns to copy the input sentence rather than paraphrasing it. This is captured by the negative BLEU score in the validation process. However, our idea was to directly engineer the loss function to tackle this problem. BartForConditionalGeneration, as most language models, uses [cross entropy loss](https://github.com/huggingface/transformers/blob/v4.44.2/src/transformers/models/bart/modeling_bart.py#L1557). Cross entropy computes the loss based on the probability of the sentences given the training corpus. However, it does not directly punish a sentence very close to the input or monotonic vocabulary use. To leverage the lexical diversity and avoid common n-grams between input and predicted sentence, we implemented two penalty functions, scaled with corresponding and tuned factors &alpha;, and added the penalty to the loss:
 
-\[
+$$
 \text{loss} = \text{loss}_{\text{crossentropy}} + \text{loss}_{\text{l2}} + \text{loss}_{\text{penalty}}
-\]
+$$
 
-\[
-\text{loss}_{\text{penalty}} = \alpha_{ngram} \times \text{n-gram-penalty}(\text{input}, \text{predictions}) + \alpha_{diversity} \times \text{diversity-penalty}(\text{input}, \text{predictions})
-\]
+
+$$
+\text{loss}_{\text{penalty}} = \alpha_{\text{ngram}} \times \text{n-gram-penalty}(\text{input}, \text{predictions}) + \alpha_{\text{diversity}} \times \text{diversity-penalty}(\text{input}, \text{predictions})
+$$
 
 The n-gram penalty discourages the model from replicating phrases from the input by penalizing the overlap of n-grams between the input and the generated text. It counts the occurrences of n-grams shared by both the input and prediction, with the penalty increasing proportionally to their frequency and length. This method ensures that the model avoids copying sequences directly from the input, promoting more varied outputs.
 
 The diversity penalty enhances lexical variety by penalizing the generation of frequently occurring words shared between the input and prediction. By identifying common words that exceed a specified frequency threshold, the penalty encourages the model to use a broader range of vocabulary, reducing repetitive or monotonic language in the generated text.
 
-We looked for similar implementations on google scholar but couldn't find a reference. However, the idea of using a custom loss function tailored to a specific problem is inspired by [Corinna's Bachelor Thesis](https://github.com/corinnawegner/denoising_fingerprints_code/blob/main/Wegner_Corinna_Bachelor_Thesis_Corinna_Elena_Wegner.pdf).
+We looked for similar implementations on google scholar but couldn't find a reference publication. However, the idea of using a custom loss function tailored to our specific problem was inspired by [Corinna's Bachelor Thesis](https://github.com/corinnawegner/denoising_fingerprints_code/blob/main/Wegner_Corinna_Bachelor_Thesis_Corinna_Elena_Wegner.pdf).
 
 ### Parameter-efficient finetuning (PEFT) using LoRA
 *used in: BART generation*
@@ -163,7 +164,11 @@ We looked for similar implementations on google scholar but couldn't find a refe
 
 Based on the paper by [Li et. al.](https://arxiv.org/pdf/1711.00279) we implement a Reinforcement learning method to refine the generation model. The generation model acts as a RL-agent We normally finetune the generation model first. In the refinement, we let it generate a paraphrase to an input. Our idea was to use the BERT paraphrase detector for the reward computation. It determines whether the generated sentences are paraphrases. Then, we can change the weights of the generator with the reward signal:
 
-∇θLRL(θ) = ∑_{t=1}^{T} [∇θ log pθ(ŷ_t | Ŷ_{1:t−1}, X)] r_t.
+$$
+\nabla_{\theta} \mathcal{L}_{\text{RL}}(\theta) = \sum_{t=1}^{T} \left[ \nabla_{\theta} \log p_{\theta}(\hat{y}_t \mid \hat{Y}_{1:t-1}, X) \right] r_t
+$$
+
+
 
 In the paper, the authors define a positive reward only at the end of the sentence, assigning to the other positions a reward of zero. Thereby, it is possible to apply stochastic gradient descent.
 
