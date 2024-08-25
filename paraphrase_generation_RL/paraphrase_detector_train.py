@@ -1,12 +1,12 @@
 import torch
 from torch.optim import AdamW
-from transformers import AutoTokenizer, BartForConditionalGeneration, BertTokenizer
+from transformers import BertTokenizer
 from multitask_classifier_task import MultitaskBERT
-import pandas as pd
-#import bart_generation
 import warnings
-from tqdm import tqdm
 import socket
+from torch.utils.data import DataLoader
+from data.datasets import preprocess_string
+import numpy as np
 
 # Determine the mode based on the hostname
 try:
@@ -14,13 +14,13 @@ try:
 except Exception:
     local_hostname = None
 
-DEV_MODE = local_hostname in ['Corinna-PC', "TABLET-TTS0K9R0"]  # Add any other hostname if needed
+DEV_MODE = local_hostname in ['Corinna-PC', "TABLET-TTS0K9R0", "DESKTOP-3D9LKBO"]
 TQDM_DISABLE = not DEV_MODE
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 
 # Evaluator function to compute the paraphrase probability
-def predict_paraphrase(evaluator, sentence1, sentence2, evaluator_tokenizer, device):
+def predict_paraphrase_RL(evaluator, sentences1, sentences2, evaluator_tokenizer):
     """
     Predict whether two sentences are paraphrases using the given model.
 
@@ -34,19 +34,31 @@ def predict_paraphrase(evaluator, sentence1, sentence2, evaluator_tokenizer, dev
     Returns:
     - float: The predicted probability that the two sentences are paraphrases.
     """
+
+    # Whoever reads this, I want to let you know that this multitask bert pipeline is overengineered
+    # I present to you, a rodeo through the sts pipeline:
+
     evaluator.eval()
-    with torch.no_grad():
-        # Tokenize input sentences and move to the device
-        inputs = evaluator_tokenizer(sentence1, sentence2, return_tensors="pt", padding=True, truncation=True).to(device)
 
-        # Forward pass through the model
-        logits = evaluator(input_ids=inputs["input_ids"], attention_mask=inputs["attention_mask"])
+    sentences1 = [preprocess_string(s) for s in sentences1]
+    sentences2 = [preprocess_string(s) for s in sentences2]
 
-        # If the model returns a tensor directly, it should be your logits
-        # Assuming binary classification, extract the logit for the positive class
-        probability = torch.sigmoid(logits[:, 0]).item()
-        #print(f"probability: {probability}, sentences: {sentence1}, {sentence2}")
-        return probability
+    encoding1 = evaluator_tokenizer(sentences1, return_tensors="pt", padding=True, truncation=True)
+    encoding2 = evaluator_tokenizer(sentences2, return_tensors="pt", padding=True, truncation=True)
+
+    token_ids = torch.LongTensor(encoding1["input_ids"])
+    attention_mask = torch.LongTensor(encoding1["attention_mask"])
+
+    token_ids2 = torch.LongTensor(encoding2["input_ids"])
+    attention_mask2 = torch.LongTensor(encoding2["attention_mask"])
+
+    logits = evaluator.predict_similarity(token_ids, attention_mask, token_ids2, attention_mask2)
+
+    probabilities = logits/5
+
+    print(probabilities)
+
+    return probabilities
 
 def load_evaluator(path, device):
     """
@@ -115,31 +127,28 @@ def fine_tune_generator(model, evaluator, evaluator_tokenizer, train_data, devic
 
             batch_indices = indices.tolist()
             input_texts_batch = [input_texts[idx] for idx in batch_indices]
-            rewards = [
-                predict_paraphrase(evaluator, i, gs, evaluator_tokenizer,
-                                   device)
-                for i, gs in zip(input_texts_batch, generated_sentences)]
+            rewards = predict_paraphrase_RL(evaluator, input_texts_batch, generated_sentences, evaluator_tokenizer)
 
             rewards = torch.tensor(rewards, device=device)
 
-            # Compute the log probabilities for the generated tokens
-            # Forward pass to get logits
+            # Compute the log probabilities for the generated sentences
+
             model_outputs = model(input_ids=input_ids, attention_mask=attention_mask)
             logits = model_outputs.logits
 
-            # Apply softmax to get probabilities and then log
-            log_probs = torch.log_softmax(logits, dim=-1)  # Shape: [batch_size, sequence_length, vocab_size]
+            # Apply softmax to get probabilities and then take the log
+            log_probs = torch.log_softmax(logits, dim=-1)
 
-            # Use the generated token indices to extract the relevant log probabilities
-            # Here assuming you're working with tokenized outputs and logits
-            # You'll need to handle this based on how generated sentences are processed
-            # Example assumes the generated token indices are provided in `outputs`
-            generated_token_indices = outputs  # Adjust this based on actual output format
-            log_probs_for_generated_tokens = torch.gather(log_probs, dim=-1,
-                                                          index=generated_token_indices.unsqueeze(-1)).squeeze(-1)
+            # Ensure generated_token_indices are the correct size
+            generated_token_indices = outputs[:, :log_probs.size(1)]  # Ensure matching dimensions
+
+            log_probs_for_generated_tokens = torch.gather(log_probs, dim=-1, index=generated_token_indices.unsqueeze(-1)).squeeze(-1)
 
             # Average log_probs over the sequence length
             mean_log_probs = log_probs_for_generated_tokens.mean(dim=1)
+
+            # Compute the loss (Reinforcement Learning Loss)
+            loss = -torch.mean(mean_log_probs * rewards)
 
             # Compute the loss
             loss = -torch.mean(mean_log_probs * rewards)

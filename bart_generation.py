@@ -28,7 +28,7 @@ except:
     local_hostname = None
 
 DEV_MODE = False
-if local_hostname == 'Corinna-PC' or local_hostname == "TABLET-TTS0K9R0":
+if local_hostname == 'Corinna-PC' or local_hostname == "TABLET-TTS0K9R0" or local_hostname == "DESKTOP-3D9LKBO":
     DEV_MODE = True
 
 TQDM_DISABLE = not DEV_MODE
@@ -81,7 +81,7 @@ hyperparams = {
     'l2_regularization': args.l2_regularization,
     'use_QP': args.use_QP if hasattr(args, 'use_QP') else False,
     'use_lora': args.use_lora if hasattr(args, 'use_lora') else False,
-    'use_RL':  args.use_RL if hasattr(args, 'use_RL') else False,
+    'use_RL': args.use_RL if hasattr(args, 'use_RL') else False,
     'tuning_mode': args.tuning_mode if hasattr(args, 'tuning_mode') else False,
     'normal_mode': args.normal_mode if hasattr(args, 'normal_mode') else False,
 }
@@ -582,10 +582,12 @@ def finetune_paraphrase_generation(args):
     test_data = transform_data(test_dataset)
 
     if hyperparams["use_RL"]:
+
         from paraphrase_generation_RL import paraphrase_detector_train
-        evaluator_model_path = "models/finetune-10-1e-05-sts.pt"
+
+        evaluator_model_path = r"models/finetune-10-1e-05-sts.pt"
         if DEV_MODE:
-            evaluator_model_path = r"C:\Users\corin\OneDrive\Physik Master\SoSe 24\Deep Learning for Natural Language Processing\Project\models\qqp-finetune-10-1e-05.pt"  # models/finetune-10-1e-05-qqp.pt"
+            evaluator_model_path = r"C:\Users\corin\OneDrive\Physik Master\SoSe 24\Deep Learning for Natural Language Processing\Project\models\finetune-10-1e-05-sts.pt"  # models/finetune-10-1e-05-qqp.pt"
 
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         model = BartForConditionalGeneration.from_pretrained("facebook/bart-large").to(device)
@@ -593,12 +595,13 @@ def finetune_paraphrase_generation(args):
 
         evaluator, evaluator_tokenizer = paraphrase_detector_train.load_evaluator(evaluator_model_path, device)
 
-        print('Training generator.\n')
-        model = train_model(model, train_data, val_data, device, tokenizer, learning_rate = 8e-5, batch_size=hyperparams['batch_size'],
-                            patience=hyperparams['patience'], print_messages=True, alpha_ngram=hyperparams["alpha"],
-                            alpha_diversity=hyperparams["alpha"], optimizer="Adam",
-                            use_scheduler='ReduceLROnPlateau', train_dataset = train_dataset)
-        print('Finished training generator.')
+        if not DEV_MODE:
+            print('Training generator.\n')
+            model = train_model(model, train_data, val_data, device, tokenizer, learning_rate = 8e-5, batch_size=hyperparams['batch_size'],
+                                patience=hyperparams['patience'], print_messages=True, alpha_ngram=hyperparams["alpha"],
+                                alpha_diversity=hyperparams["alpha"], optimizer="Adam",
+                                use_scheduler='ReduceLROnPlateau', train_dataset = train_dataset)
+            print('Finished training generator.')
 
         score_before_finetune = evaluate_model(model, val_data, device, tokenizer)
         print(f'Score before fine-tuning with RL: {score_before_finetune}\n')

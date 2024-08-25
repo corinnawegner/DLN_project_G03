@@ -1,4 +1,17 @@
 from collections import Counter
+
+import nltk
+from nltk.data import find
+
+try:
+    # Check if 'wordnet' is already downloaded
+    find('corpora/wordnet.zip')
+    print("WordNet is already downloaded.")
+except LookupError:
+    # If not found, download 'wordnet'
+    print("Downloading WordNet...")
+    nltk.download('wordnet')
+
 from nltk import ngrams
 
 def ngram_penalty(pred_texts, input_texts, n=4):
