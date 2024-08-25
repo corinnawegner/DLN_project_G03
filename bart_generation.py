@@ -28,12 +28,14 @@ except:
     local_hostname = None
 
 DEV_MODE = False
-if local_hostname == 'Corinna-PC' or local_hostname == "TABLET-TTS0K9R0":  # Todo: Add also laptop
+if local_hostname == 'Corinna-PC' or local_hostname == "TABLET-TTS0K9R0":
     DEV_MODE = True
 
 TQDM_DISABLE = not DEV_MODE
 
 warnings.filterwarnings("ignore", category=FutureWarning)
+
+nlp = spacy.load("en_core_web_sm")
 
 def get_args():
     parser = argparse.ArgumentParser()
@@ -62,7 +64,7 @@ def get_args():
 
     # Adjust num_epochs based on DEV_MODE if necessary
     if 'DEV_MODE' in globals() and DEV_MODE:
-        args.num_epochs = 2
+        args.num_epochs = 10
 
     return args
 
@@ -79,7 +81,7 @@ hyperparams = {
     'l2_regularization': args.l2_regularization,
     'use_QP': args.use_QP if hasattr(args, 'use_QP') else False,
     'use_lora': args.use_lora if hasattr(args, 'use_lora') else False,
-    'use_RL': args.use_RL if hasattr(args, 'use_RL') else False,
+    'use_RL':  args.use_RL if hasattr(args, 'use_RL') else False,
     'tuning_mode': args.tuning_mode if hasattr(args, 'tuning_mode') else False,
     'normal_mode': args.normal_mode if hasattr(args, 'normal_mode') else False,
 }
@@ -97,7 +99,7 @@ if hyperparams['use_RL'] == True:
     from paraphrase_generation_RL import paraphrase_detector_train
     evaluator_model_path = "models/finetune-10-1e-05-sts.pt"
     if DEV_MODE:
-        evaluator_model_path = r"C:\Users\corin\OneDrive\Physik Master\SoSe 24\Deep Learning for Natural Language Processing\Project\models\qqp-finetune-10-1e-05.pt"  # models/finetune-10-1e-05-qqp.pt"
+        evaluator_model_path = r"C:\Users\corin\OneDrive\Physik Master\SoSe 24\Deep Learning for Natural Language Processing\Project\models\finetune-10-1e-05-sts.pt"  # models/finetune-10-1e-05-qqp.pt"
 
 # Define a model save path
 r = random.randint(10000, 99999)
@@ -157,7 +159,7 @@ def transform_data(dataset, max_length=256, use_tagging=hyperparams['POS_NER_tag
             combined_input = f"{sentence_1} {SEP} {segment_location_1} {SEP} {paraphrase_type}"
         if qpmodel is not None:
             qpmodel.to(device)
-            quality_vector = qpmodel.predict(sentence_1, device)  # Assuming qpmodel is callable and returns a tensor
+            quality_vector = qpmodel.predict(sentence_1, device)
             quality_vector = quality_vector.to(device)
 
             quality_vector_str = ' '.join(map(str, quality_vector.tolist()))
@@ -369,6 +371,9 @@ def train_model(model, train_data, val_data, device, tokenizer,
         if hyperparams['use_lora'] == True:
             if epoch < 8:
                 best_bleu_score = 0 #Lora takes longer
+            if scores['bleu_score'] > 13:
+                paraphrases = generate_paraphrases(model, val_data[:5], device, tokenizer)
+                print(paraphrases.to_string())
 
         if epochs_without_improvement >= patience and epoch > 15:
             if print_messages:
@@ -578,7 +583,7 @@ def finetune_paraphrase_generation(args):
 
     if hyperparams["use_RL"]:
         from paraphrase_generation_RL import paraphrase_detector_train
-        evaluator_model_path = "models/finetune-10-1e-05-qqp.pt"
+        evaluator_model_path = "models/finetune-10-1e-05-sts.pt"
         if DEV_MODE:
             evaluator_model_path = r"C:\Users\corin\OneDrive\Physik Master\SoSe 24\Deep Learning for Natural Language Processing\Project\models\qqp-finetune-10-1e-05.pt"  # models/finetune-10-1e-05-qqp.pt"
 
@@ -636,12 +641,9 @@ def finetune_paraphrase_generation(args):
         trainable_parameters = sum(p.numel() for p in base_model.parameters() if p.requires_grad)
         print(f"Number of trainable parameters: {trainable_parameters}")
 
-      #  for param in base_model.parameters(): #Just to be absolutely sure
-       #     param.requires_grad = False
-
         # Configure LoRA
         lora_config = LoraConfig(
-            r=8,  # rank factor
+            r=96,  # rank factor
             lora_alpha=16,  # Scaling factor
             lora_dropout=0.1,  # Dropout rate for LoRA layers
             task_type=TaskType.SEQ_2_SEQ_LM  # Task type for sequence-to-sequence models
@@ -650,16 +652,13 @@ def finetune_paraphrase_generation(args):
         # Wrap the model with LoRA
         model = get_peft_model(base_model, lora_config)
 
-   #     for param in model.base_model.parameters():
-    #        param.requires_grad = False
-
         trainable_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
         print(f"Number of trainable parameters: {trainable_parameters}")
 
         model.to(device)
         model.print_trainable_parameters()
         model = train_model(model, train_data, val_dataset, device, tokenizer,
-                            learning_rate=2e-4, batch_size=hyperparams['batch_size'],
+                            learning_rate=1e-3, batch_size=hyperparams['batch_size'],
                             patience=hyperparams['patience'], print_messages=True, alpha_ngram=0.001,
                             alpha_diversity=0.001, optimizer="Adam",
                             use_scheduler='ReduceLROnPlateau', train_dataset=train_dataset)
@@ -704,9 +703,9 @@ def finetune_paraphrase_generation(args):
         paraphrases = generate_paraphrases(model, val_data,  device, tokenizer)
         print(paraphrases.to_string())
 
-    test_ids = test_dataset["id"]
-    test_results = test_model(test_data, test_ids, device, model, tokenizer)
-    test_results.to_csv("predictions/bart/etpc-paraphrase-generation-test-output.csv", index=False, sep="\t")
+        test_ids = test_dataset["id"]
+        test_results = test_model(test_data, test_ids, device, model, tokenizer)
+        test_results.to_csv("predictions/bart/etpc-paraphrase-generation-test-output.csv", index=False, sep="\t")
 
 if __name__ == "__main__":
     args = get_args()

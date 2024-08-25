@@ -3,7 +3,6 @@ from Quality_predictor import quality_measure
 from optimizer import AdamW
 import warnings
 import socket
-import spacy
 from transformers import BertModel, AutoTokenizer
 import torch
 import torch.nn as nn
@@ -12,6 +11,7 @@ from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import DataLoader, TensorDataset
 from tqdm import tqdm
 from bart_generation import perform_pos_ner
+import spacy
 
 # Load SpaCy model for POS tagging and NER
 nlp = spacy.load("en_core_web_sm")
@@ -175,7 +175,7 @@ def train_quality_predictor(model, train_dataset, num_epochs, device):
         true_vectors.append(true_vector)
 
     # Initialize optimizer and scheduler
-    qp_optimizer = AdamW(model.parameters(), lr=5e-4)  # Find optimal learning rate later
+    qp_optimizer = AdamW(model.parameters(), lr=5e-4)
     qp_scheduler = StepLR(qp_optimizer, step_size=1, gamma=0.95)
     mse = torch.nn.MSELoss()
 

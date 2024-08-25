@@ -15,6 +15,9 @@
 #module load anaconda3
 #source activate dnlp # Or whatever you called your environment.
 #pip install --user spacy
+pip install --user git+https://github.com/lucadiliello/bleurt-pytorch.git
+pip install --user datasets benepar apted levenshtein
+
 
 
 # Printing out some info.
@@ -27,7 +30,6 @@ echo "Current node: ${SLURM_NODELIST}"
 python --version
 python -m torch.utils.collect_env 2> /dev/null
 
-
 # Print out some git info.
 module load git
 echo -e "\nCurrent Branch: $(git rev-parse --abbrev-ref HEAD)"
@@ -36,6 +38,5 @@ echo -e "Uncommitted Changes: $(git status --porcelain | wc -l)\n"
 
 # Run the script:
 #python -u bart_generation.py --use_gpu --local_files_only --option finetune --task sst --hidden_dropout_prob 0.1
-#srun python -u multitask_classifier_task.py --use_gpu --local_files_only --option finetune --task sts --additional_input
-srun python -u bart_generation.py --use_gpu --use_lora
-
+#srun python -u multitask_classifier_task.py --use_gpu --local_files_only --option finetune --additional_input --task multitask
+srun python -u bart_generation.py --use_gpu --use_QP

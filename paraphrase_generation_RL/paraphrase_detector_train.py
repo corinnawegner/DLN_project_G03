@@ -1,7 +1,7 @@
 import torch
 from torch.optim import AdamW
 from transformers import AutoTokenizer, BartForConditionalGeneration, BertTokenizer
-from multitask_classifier import MultitaskBERT
+from multitask_classifier_task import MultitaskBERT
 import pandas as pd
 #import bart_generation
 import warnings
@@ -65,7 +65,16 @@ def load_evaluator(path, device):
     evaluator_tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
 
     saved = torch.load(path, map_location=device)
-    evaluator = MultitaskBERT(saved["model_config"]).to(device)
+
+    config = saved['model_config']
+
+    print(config)
+
+    model = MultitaskBERT(config)
+    model.load_state_dict(saved["model"])
+    model = model.to(device)
+
+    evaluator = MultitaskBERT(config).to(device)
     evaluator.load_state_dict(saved["model"])
     return evaluator, evaluator_tokenizer
 

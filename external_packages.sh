@@ -17,6 +17,10 @@ source activate dnlp # Or whatever you called your environment.
 
 pip install --user spacy
 pip install --user peft
+pip install --user nltk
+pip install --user git+https://github.com/lucadiliello/bleurt-pytorch.git
+pip install --user datasets benepar apted levenshtein
+
 
 # For debugging purposes.
 python --version

@@ -1,76 +1,54 @@
-import difflib
 import torch
 import warnings
-import nltk
-from nltk import word_tokenize, Tree
+import spacy
+from datasets import load_metric
+from bleurt_pytorch import BleurtConfig, BleurtForSequenceClassification, BleurtTokenizer
+import Levenshtein
 
-# Download necessary NLTK data files (run these lines once)
-#nltk.download('punkt')
-#nltk.download('averaged_perceptron_tagger')
+nlp = spacy.load('en_core_web_sm')
+
 warnings.filterwarnings("ignore", category=FutureWarning)
 
-def parse_sentence_simple(sentence):
-    """Create a simple parse tree with each word treated as its own leaf."""
-    words = sentence.split()
-    parse_tree = Tree('S', [Tree('WORD', [word]) for word in words])
-    return parse_tree
+def compute_bleurt_score(references, candidates):
+    """Compute BLEURT score for semantic similarity."""
 
-def tree_edit_distance_simple(tree1, tree2):
-    """Compute the tree edit distance between two simple trees."""
-    str_tree1 = tree1.pformat()
-    str_tree2 = tree2.pformat()
-    diff = difflib.ndiff(str_tree1, str_tree2)
-    return sum(1 for _ in diff if _[0] in ('+', '-'))
+    config = BleurtConfig.from_pretrained('lucadiliello/BLEURT-20-D12')
+    model = BleurtForSequenceClassification.from_pretrained('lucadiliello/BLEURT-20-D12')
+    tokenizer = BleurtTokenizer.from_pretrained('lucadiliello/BLEURT-20-D12')
 
-def normalized_tree_edit_distance_simple(tree1, tree2):
-    """Compute normalized tree edit distance for simple trees."""
-    edit_distance = tree_edit_distance_simple(tree1, tree2)
-    max_distance = max(len(tree1.pformat()), len(tree2.pformat()))
-    return edit_distance / max_distance if max_distance > 0 else 0
+    model.eval()
+    with torch.no_grad():
+        inputs = tokenizer(references, candidates, padding='longest', return_tensors='pt')
+        res = model(**inputs).logits.flatten().tolist()
+    return res
 
-def character_edit_distance_simple(str1, str2):
-    """Compute character-level minimal edit distance."""
-    seq_matcher = difflib.SequenceMatcher(None, str1, str2)
-    return 1 - seq_matcher.ratio()
-
-def normalized_character_edit_distance_simple(str1, str2):
-    """Compute normalized character-level edit distance."""
-    return character_edit_distance_simple(str1, str2)
-
-def compute_bleurt_score_simple(reference, candidate):
-    """Compute a simple BLEURT-like score based on basic similarity."""
-    # Use a simple ratio of matching words as a proxy for semantic similarity
-    ref_words = set(reference.split())
-    cand_words = set(candidate.split())
-    overlap = ref_words & cand_words
-    return len(overlap) / max(len(ref_words), len(cand_words), 1)
+def word_level_levenshtein_distance(str1, str2):
+    """Compute Levenshtein distance at the word level."""
+    words1 = str1.split()
+    words2 = str2.split()
+    return Levenshtein.distance(' '.join(words1), ' '.join(words2))
 
 def quality_vector(s, s_prime):
-    """Compute the quality vector for two sentences without tokenizers."""
-
+    """Compute the quality vector for two sentences."""
     # Semantic quality
-    qsem = compute_bleurt_score_simple(s, s_prime)
+    qsem = compute_bleurt_score(s, s_prime)[0]
 
     # Syntactic quality
-    tree_s = parse_sentence_simple(s)
-    tree_s_prime = parse_sentence_simple(s_prime)
-    qsyn = normalized_tree_edit_distance_simple(tree_s, tree_s_prime)
+    metric = load_metric("Quality_predictor/syntdiv_measure", trust_remote_code=True)
+    qsyn = metric.compute(predictions=[s], references=[s_prime])['scores'][0]
 
     # Lexical quality
-    qlex = normalized_character_edit_distance_simple(s, s_prime)
+    max_word_length = max(len(s.split()), len(s_prime.split()))
+    word_level_lev = word_level_levenshtein_distance(s, s_prime)
+    qlex = word_level_lev / max_word_length if max_word_length > 0 else 0
+    qlex = qlex
 
-    # Normalize the scores to [0, 100]
-    qsem_normalized = int(100 * qsem)/100
-    qsyn_normalized = int(100 * (1 - qsyn))/100
-    qlex_normalized = int(100 * (1 - qlex))/100
+    return qsem, qsyn, qlex
 
-    return qsem_normalized, qsyn_normalized, qlex_normalized
 
-"""
 # Example usage
 s = "The quick brown fox jumps over the lazy dog."
 s_prime = "A fast, dark-colored fox leaps over a sleepy dog."
 
-quality = quality_vector(s)
+quality = quality_vector(s, s_prime)
 print(f"Quality Vector: {quality}")
-"""

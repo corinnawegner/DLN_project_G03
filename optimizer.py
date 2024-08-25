@@ -108,8 +108,6 @@ class AdamW(Optimizer):
 
         return loss
 
-
-
 class EAdam(Optimizer):
     r"""Implements Adam algorithm.
 

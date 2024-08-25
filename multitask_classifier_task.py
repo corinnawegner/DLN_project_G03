@@ -1,10 +1,6 @@
 import argparse
-import os
 from pprint import pformat
 import random
-import re
-import sys
-import time
 from types import SimpleNamespace
 
 import numpy as np
@@ -15,7 +11,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from bert import BertModel
-from datasets import (
+from data.datasets import (
     SentenceClassificationDataset,
     SentencePairDataset,
     load_multitask_data,
@@ -23,10 +19,9 @@ from datasets import (
 from evaluation import model_eval_multitask, test_model_multitask
 from optimizer import AdamW
 
-from torch.optim.lr_scheduler import StepLR, ReduceLROnPlateau
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 TQDM_DISABLE = True
-
 
 # fix the random seed
 def seed_everything(seed=11711):
@@ -37,7 +32,6 @@ def seed_everything(seed=11711):
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.deterministic = True
-
 
 BERT_HIDDEN_SIZE = 768
 N_SENTIMENT_CLASSES = 5
