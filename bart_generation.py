@@ -1,5 +1,5 @@
 import argparse
-from peft import PeftModel, PeftConfig
+from peft import PeftModel
 import random
 import numpy as np
 import pandas as pd
@@ -18,9 +18,6 @@ import socket
 import os
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.optim import Adam
-
-# import nltk
-# nltk.download('wordnet')
 
 try:
     local_hostname = socket.gethostname()
@@ -47,10 +44,11 @@ def get_args():
     parser.add_argument("--patience", type=int, default=5, help="Patience for early stopping")
     parser.add_argument("--num_epochs", type=int, default=100, help="Number of epochs for training")
     parser.add_argument("--alpha", type=float, default=0.001, help="Alpha value for regularization")
-    parser.add_argument("--POS_NER_tagging", action="store_true", help="Enable POS and NER tagging")
+    parser.add_argument("--POS_NER_tagging", action="store_false", help="Enable POS and NER tagging")
     parser.add_argument("--l2_regularization", type=float, default=0.01, help="L2 regularization coefficient")
     parser.add_argument("--seed", type=int, default=11711, help="Random seed")
     parser.add_argument("--use_gpu", action="store_true", help="Use GPU for training")
+    parser.add_argument("--lora_rank", type=int, default=96, help="The rank of the LoRa config, note that --use_lora needs to be activated")
 
     # Creating a mutually exclusive group for conflicting arguments
     mode_group = parser.add_mutually_exclusive_group()
@@ -96,7 +94,6 @@ if hyperparams['use_lora'] == True:
     from peft import get_peft_model, LoraConfig, TaskType
 
 if hyperparams['use_RL'] == True:
-    from paraphrase_generation_RL import paraphrase_detector_train
     evaluator_model_path = "models/finetune-10-1e-05-sts.pt"
     if DEV_MODE:
         evaluator_model_path = r"C:\Users\corin\OneDrive\Physik Master\SoSe 24\Deep Learning for Natural Language Processing\Project\models\finetune-10-1e-05-sts.pt"  # models/finetune-10-1e-05-qqp.pt"
@@ -345,6 +342,7 @@ def train_model(model, train_data, val_data, device, tokenizer,
 
         epoch_end_time = time.time()
         epoch_duration = epoch_end_time - epoch_start_time
+
         if print_messages:
             print(f"Epoch {epoch + 1}/{num_epochs} completed in {epoch_duration:.2f} seconds.")
 
@@ -371,9 +369,10 @@ def train_model(model, train_data, val_data, device, tokenizer,
         if hyperparams['use_lora'] == True:
             if epoch < 8:
                 best_bleu_score = 0 #Lora takes longer
-            if scores['bleu_score'] > 13:
-                paraphrases = generate_paraphrases(model, val_data[:5], device, tokenizer)
-                print(paraphrases.to_string())
+
+        if scores['bleu_score'] > 22:
+            paraphrases = generate_paraphrases(model, val_data[:5], device, tokenizer)
+            print(paraphrases.to_string())
 
         if epochs_without_improvement >= patience and epoch > 15:
             if print_messages:
@@ -554,7 +553,7 @@ def test_model(test_data, test_ids, device, model, tokenizer):
 
 
 def finetune_paraphrase_generation(args):
-    device = torch.device("cuda") if args.use_gpu else torch.device("cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     tokenizer = AutoTokenizer.from_pretrained("facebook/bart-large", local_files_only=True)
 
     hyperparamer_tuning_mode = hyperparams['tuning_mode']
@@ -578,40 +577,48 @@ def finetune_paraphrase_generation(args):
     # val_data = transform_data(val_dataset)
 
     test_dataset = pd.read_csv("data/etpc-paraphrase-generation-test-student.csv", sep="\t")
-    test_dataset = test_dataset if not DEV_MODE else test_dataset[:10]  # todo: put back at the end
     test_data = transform_data(test_dataset)
 
     if hyperparams["use_RL"]:
 
-        from paraphrase_generation_RL import paraphrase_detector_train
+        from paraphrase_detector_train_RL import fine_tune_generator
 
         evaluator_model_path = r"models/finetune-10-1e-05-sts.pt"
         if DEV_MODE:
             evaluator_model_path = r"C:\Users\corin\OneDrive\Physik Master\SoSe 24\Deep Learning for Natural Language Processing\Project\models\finetune-10-1e-05-sts.pt"  # models/finetune-10-1e-05-qqp.pt"
 
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
         model = BartForConditionalGeneration.from_pretrained("facebook/bart-large").to(device)
-        tokenizer = AutoTokenizer.from_pretrained("facebook/bart-large")
 
-        evaluator, evaluator_tokenizer = paraphrase_detector_train.load_evaluator(evaluator_model_path, device)
 
-        if not DEV_MODE:
-            print('Training generator.\n')
-            model = train_model(model, train_data, val_data, device, tokenizer, learning_rate = 8e-5, batch_size=hyperparams['batch_size'],
-                                patience=hyperparams['patience'], print_messages=True, alpha_ngram=hyperparams["alpha"],
-                                alpha_diversity=hyperparams["alpha"], optimizer="Adam",
-                                use_scheduler='ReduceLROnPlateau', train_dataset = train_dataset)
-            print('Finished training generator.')
+        print('Training generator.\n')
+        model = train_model(model, train_data, val_data, device, tokenizer,
+                    learning_rate=hyperparams['learning_rate'], batch_size=hyperparams['batch_size'],
+                    patience=hyperparams['patience'], print_messages=True, alpha_ngram=0.001,
+                    alpha_diversity=0.001, optimizer="Adam",
+                    use_scheduler='ReduceLROnPlateau', train_dataset = train_dataset)
+        print('Finished training generator.')
 
         score_before_finetune = evaluate_model(model, val_data, device, tokenizer)
         print(f'Score before fine-tuning with RL: {score_before_finetune}\n')
 
         print('Training generator with feedback from evaluator.\n')
-        model = paraphrase_detector_train.fine_tune_generator(model, evaluator, evaluator_tokenizer, train_data, device, tokenizer, train_dataset=train_dataset, learning_rate=1e-6) #Use smaller learning rate because model is already close to optimum
+
+        model = fine_tune_generator(
+                model,
+                evaluator_model_path,
+                train_data,
+                device,
+                tokenizer,
+                train_dataset=train_dataset,
+                learning_rate=1e-9
+        )
+
+        "model, evaluator_path, train_data, device, tokenizer, train_dataset, learning_rate, num_epochs=10 if not DEV_MODE else 2"
 
         score_after_finetune = evaluate_model(model, val_data, device, tokenizer)
         print(f'Score after fine-tuning with evaluator: {score_after_finetune}\n')
-        paraphrases = generate_paraphrases(model, val_data, device, tokenizer)
+        paraphrases = generate_paraphrases(model, val_data[:5], device, tokenizer)
         print(paraphrases.to_string())
 
     if hyperparams["use_QP"]:
@@ -634,7 +641,7 @@ def finetune_paraphrase_generation(args):
         scores = evaluate_model(model, val_data, device, tokenizer)
         bleu_score, _ = scores.values()
         print(f"The penalized BLEU-score of the model is: {bleu_score:.3f}")
-        paraphrases = generate_paraphrases(model, val_data, device, tokenizer)
+        paraphrases = generate_paraphrases(model, val_data[:5], device, tokenizer)
         print(paraphrases.to_string())
 
     if hyperparams['use_lora'] == True:
@@ -646,7 +653,7 @@ def finetune_paraphrase_generation(args):
 
         # Configure LoRA
         lora_config = LoraConfig(
-            r=96,  # rank factor
+            r= args.lora_rank,  # rank factor
             lora_alpha=16,  # Scaling factor
             lora_dropout=0.1,  # Dropout rate for LoRA layers
             task_type=TaskType.SEQ_2_SEQ_LM  # Task type for sequence-to-sequence models
@@ -657,6 +664,8 @@ def finetune_paraphrase_generation(args):
 
         trainable_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
         print(f"Number of trainable parameters: {trainable_parameters}")
+
+        model.print_trainable_parameters()
 
         model.to(device)
         model.print_trainable_parameters()
@@ -669,7 +678,7 @@ def finetune_paraphrase_generation(args):
         bleu_score, _ = scores.values()
         print(f"The penalized BLEU-score of the model is: {bleu_score:.3f}")
 
-        paraphrases = generate_paraphrases(model, val_data, device, tokenizer)
+        paraphrases = generate_paraphrases(model, val_data[:5], device, tokenizer)
         print(paraphrases.to_string())
 
     if hyperparamer_tuning_mode == True:
@@ -692,23 +701,24 @@ def finetune_paraphrase_generation(args):
         print(f"alpha, bleu: {list_alpha, list_bleu}.")
 
 
-    if normal_mode == True:  # Todo: This code below is to check loss function engineering, BUT see below
+    if normal_mode == True:
+
         model = BartForConditionalGeneration.from_pretrained("facebook/bart-large", local_files_only=True)
         model.to(device)
         model = train_model(model, train_data, val_data, device, tokenizer,
                             learning_rate=hyperparams['learning_rate'], batch_size=hyperparams['batch_size'],
-                            patience=hyperparams['patience'], print_messages=True, alpha_ngram=0.001,
-                            alpha_diversity=0.001, optimizer="Adam",
-                            use_scheduler='ReduceLROnPlateau', train_dataset = train_dataset)
+                            patience=hyperparams['patience'], print_messages=True, alpha_ngram=args.alpha,
+                            alpha_diversity=args.alpha, optimizer="Adam", train_dataset = train_dataset)
         scores = evaluate_model(model, val_data, device, tokenizer)
         bleu_score, _ = scores.values()
         print(f"The penalized BLEU-score of the model is: {bleu_score:.3f}")
-        paraphrases = generate_paraphrases(model, val_data,  device, tokenizer)
-        print(paraphrases.to_string())
+        #paraphrases = generate_paraphrases(model, val_data[:5],  device, tokenizer)
+        #print(paraphrases.to_string())
 
-        test_ids = test_dataset["id"]
-        test_results = test_model(test_data, test_ids, device, model, tokenizer)
-        test_results.to_csv("predictions/bart/etpc-paraphrase-generation-test-output.csv", index=False, sep="\t")
+        if not DEV_MODE:
+            test_ids = test_dataset["id"]
+            test_results = test_model(test_data, test_ids, device, model, tokenizer)
+            test_results.to_csv(f"predictions/bart/etpc-paraphrase-generation-test-output_{r}.csv", index=False, sep="\t")
 
 if __name__ == "__main__":
     args = get_args()
