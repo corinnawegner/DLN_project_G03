@@ -563,6 +563,8 @@ This comparison could highlight some limitations of the minBERT model, given the
 
 ## Results
 
+This section summarizes our results in tables.
+
 <!-- Summarize all the results of your experiments in tables: -->
 
 | **Stanford Sentiment Treebank (SST)** |**Accuracy** |
@@ -612,9 +614,9 @@ This comparison could highlight some limitations of the minBERT model, given the
 |LoRA |20.4|34.8|30.5|
 |Deep Reinforcement Learning|**24.9**|27.3|47.4|
     
-Discuss your results, observations, correlations, etc.
+<!--Discuss your results, observations, correlations, etc.
 
-Results should have three-digit precision.
+Results should have three-digit precision. -->
  
 ### Hyperparameter Optimization 
 
