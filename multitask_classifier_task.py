@@ -48,19 +48,19 @@ class BiAttention(nn.Module):
         self.attn = nn.Linear(hidden_size, hidden_size)
 
     def forward(self, hidden_states_1, hidden_states_2):
-        # 计算两个句子之间的相互注意力
+        # Calculate mutual attention between two sentences
         attention_scores_1 = torch.matmul(self.attn(hidden_states_1), hidden_states_2.transpose(-1, -2))
         attention_scores_2 = torch.matmul(self.attn(hidden_states_2), hidden_states_1.transpose(-1, -2))
 
-        # 将注意力分数通过 softmax 进行归一化
+        # Normalize attention scores with softmax
         attn_weights_1 = F.softmax(attention_scores_1, dim=-1)
         attn_weights_2 = F.softmax(attention_scores_2, dim=-1)
 
-        # 计算加权和
+        # Compute weighted sums
         context_1 = torch.matmul(attn_weights_1, hidden_states_2)
         context_2 = torch.matmul(attn_weights_2, hidden_states_1)
 
-        # 将上下文拼接后返回
+        # Concatenate contexts and return
         combined_1 = torch.cat([hidden_states_1, context_1], dim=-1)
         combined_2 = torch.cat([hidden_states_2, context_2], dim=-1)
         return combined_1, combined_2
@@ -93,7 +93,7 @@ class MultitaskBERT(nn.Module):
 
         self.bi_attention = BiAttention(config.hidden_size)
         
-        # 定义用于paraphrase detection任务的输出层
+        #  Define the output layer for a paraphrase detection task
         self.output_pp = nn.Linear(config.hidden_size * 4, 1)
         self.additional_input = config.additional_input
 
@@ -135,17 +135,17 @@ class MultitaskBERT(nn.Module):
         outputs_1 = self.bert(input_ids_1, attention_mask=attention_mask_1)["last_hidden_state"]
         outputs_2 = self.bert(input_ids_2, attention_mask=attention_mask_2)["last_hidden_state"]
 
-        # 通过特征交互层
+        # Through the feature interaction layer
         combined_1, combined_2 = self.bi_attention(outputs_1, outputs_2)
 
-        # 使用平均池化得到每个句子的特征表示
+        # Use average pooling to get feature representation for each sentence
         pooled_1 = torch.mean(combined_1, dim=1)
         pooled_2 = torch.mean(combined_2, dim=1)
 
-        # 拼接两个句子的特征
+        # Concatenate the features of the two sentences
         combined = torch.cat([pooled_1, pooled_2], dim=-1)
 
-        # 通过线性层输出logits
+        # Output logits through a linear layer
         logits = self.output_pp(combined)
         return logits
 
@@ -167,20 +167,23 @@ class MultitaskBERT(nn.Module):
         #compute the cosinesimilarity
         similarity = torch.nn.CosineSimilarity(dim=1)
         logits = similarity(output1,output2)
-
+        scaled_z_score = None
+        if args.transformation == "linear":
+            scaled_z_score = (logits+1)*5
+        if args.transformation == "z_score":
         # compute the mean and std
-        mean_cosine = logits.mean()
-        std_cosine = logits.std()
+            mean_cosine = logits.mean()
+            std_cosine = logits.std()
 
         # normalize cosinesimilarity
-        z_score = (logits - mean_cosine) / std_cosine
+            z_score = (logits - mean_cosine) / std_cosine
 
         # convert the z_score into [0,1]
-        min_z_score, max_z_score = z_score.min(), z_score.max()
-        normalized_z_score = (z_score - min_z_score) / (max_z_score - min_z_score)
+            min_z_score, max_z_score = z_score.min(), z_score.max()
+            normalized_z_score = (z_score - min_z_score) / (max_z_score - min_z_score)
 
         # convert from [0,1] to [0,5]
-        scaled_z_score = normalized_z_score * 5
+            scaled_z_score = normalized_z_score * 5
         
         return scaled_z_score
 
@@ -327,6 +330,9 @@ def train_multitask(args):
         "option": args.option,
         "local_files_only": args.local_files_only,
         "additional_input": args.additional_input,
+        "transformation":args.transformation,
+        "loss_function":args.loss_function,
+        "add_smooth":args.add_smooth,
     }
 
     config = SimpleNamespace(**config)
@@ -351,6 +357,7 @@ def train_multitask(args):
         model.train()
         train_loss = 0
         num_batches = 0
+        theta_t = None
 
         if args.task == "sst" or args.task == "multitask":
             # Train the model on the sst dataset.
@@ -371,6 +378,22 @@ def train_multitask(args):
                 optimizer.zero_grad()
                 logits = model.predict_sentiment(b_ids, b_mask)
                 loss = F.cross_entropy(logits, b_labels.view(-1))
+
+                # If smoothness regularization is added
+                if args.add_smooth:
+                    # Initialize theta_t if not already done or if shape mismatch
+                    if theta_t is None or theta_t.shape !=logits.shape:
+                        theta_t = torch.zeros_like(logits)
+                    # Compute the sum of squared parameters for smoothness term
+                    rs = sum(param.pow(2.0).sum() for param in model.parameters())
+                    smoothness_term = 0.001*rs 
+                    # Calculate Bregman term to prevent aggressive updates
+                    bregman_term = 0.001 * torch.sum((logits - theta_t) ** 2)
+                     # Add regularization terms to the loss
+                    loss = loss + smoothness_term + bregman_term
+                    # Update theta_t to current logits
+                    theta_t = logits.detach()
+
                 loss.backward()
                 optimizer.step()
 
@@ -399,8 +422,30 @@ def train_multitask(args):
 
                 optimizer.zero_grad()
                 logits = model.predict_similarity(b_ids_1,  b_mask_1, b_ids_2, b_mask_2)
-                # l1_loss is better here as we may have extreme value in dataset
-                loss = F.l1_loss(logits.to(torch.float32), b_labels.view(-1).to(torch.float32))
+                if args.loss_function == "mse":
+                    loss = F.mse_loss(logits.to(torch.float32), b_labels.view(-1).to(torch.float32))
+                
+                # if use MNRL learning
+                if args.loss_function == "MNRL":
+                    logits_new = 0.4*logits -1
+                    b_lables_new = (b_labels>=3.0).float()
+                    loss = F.binary_cross_entropy_with_logits(logits_new, b_lables_new)
+
+                # If smoothness regularization is added
+                if args.add_smooth:
+                    # Initialize theta_t if not already done or if shape mismatch
+                    if theta_t is None or theta_t.shape !=logits.shape:
+                        theta_t = torch.zeros_like(logits)
+                    # Compute the sum of squared parameters for smoothness term
+                    rs = sum(param.pow(2.0).sum() for param in model.parameters())
+                    smoothness_term = 0.001*rs 
+                    # Calculate Bregman term to prevent aggressive updates
+                    bregman_term = 0.001 * torch.sum((logits - theta_t) ** 2)
+                     # Add regularization terms to the loss
+                    loss = loss + smoothness_term + bregman_term
+                    # Update theta_t to current logits
+                    theta_t = logits.detach()
+
                 loss.backward()
                 optimizer.step()
 
@@ -430,7 +475,24 @@ def train_multitask(args):
 
                 optimizer.zero_grad()
                 logits = model.predict_paraphrase(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
+                
+                # Calculate binary cross-entropy loss
                 loss = F.binary_cross_entropy_with_logits(logits.view(-1).to(torch.float32), b_labels.view(-1).to(torch.float32))
+
+                # If smoothness regularization is added
+                if args.add_smooth:
+                    # Initialize theta_t if not already done or if shape mismatch
+                    if theta_t is None or theta_t.shape !=logits.shape:
+                        theta_t = torch.zeros_like(logits)
+                    # Compute the sum of squared parameters for smoothness term
+                    rs = sum(param.pow(2.0).sum() for param in model.parameters())
+                    smoothness_term = 0.001*rs 
+                    # Calculate Bregman term to prevent aggressive updates
+                    bregman_term = 0.001 * torch.sum((logits - theta_t) ** 2)
+                     # Add regularization terms to the loss
+                    loss = loss + smoothness_term + bregman_term
+                    # Update theta_t to current logits
+                    theta_t = logits.detach()
                 loss.backward()
                 optimizer.step()
 
@@ -641,6 +703,24 @@ def get_args():
         default=1e-3 if args.option == "pretrain" else 1e-5,
     )
     parser.add_argument("--local_files_only", action="store_true")
+
+    parser.add_argument(
+        "--transformation",
+        type=str,
+        help='choose between "linear","z_score" to normalize cos_similarity ',
+        choices=("linear", "z_score"),
+        default="linear",
+    )
+    parser.add_argument("--add_smooth",action="store_true")
+    parser.add_argument(
+        "--loss_function",
+        type=str,
+        help='choose between "mse","MNRL" to normalize cos_similarity ',
+        choices=("mse", "MNRL"),
+        default="mse",
+    )
+
+
 
     args = parser.parse_args()
     return args
