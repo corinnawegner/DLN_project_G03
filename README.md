@@ -203,6 +203,7 @@ The generation model learns to associate the quality dimensions with the sentenc
 ![Description](https://github.com/corinnawegner/DLN_project_G03/blob/main/figures/Screenshot%202024-08-25%20012814.png)
 
 
+
 ### Additional Layers
 *used in minBERT*
 
@@ -224,6 +225,10 @@ Linear transformation preserves the absolute distance of the data and will be af
 
 [Jiang et al., 2020](https://arxiv.org/abs/1911.03437) introduce two methods to avoid the overfitting problem. The first is smoothness-inducing regularization. It makes model changes smoother by adding regularization terms. This gives constraints to the model parameters changing to ensure the output will not drastically change between different inputs. The second is Bregman proximal point optimization. It uses the Bregman distance to define a trust region that limits the magnitude of updating. It ensures stable convergence during the optimization process and avoids overfitting.
 
+### Learning rate Scheduler
+*used in BART detection*
+
+A learning rate scheduler is a strategy used to adjust the learning rate during training to improve model convergence and performance. It dynamically changes the learning rate according to a pre-defined schedule or rule, helping the model escape local minima and converge more smoothly. Two commonly used learning rate schedulers are get_linear_schedule_with_warmup and StepLR.
 
 # Experiments
 Keep track of your experiments here. What are the experiments? Which tasks and models are you considering?
@@ -245,7 +250,7 @@ For each experiment answer briefly the questions:
 - Add relevant metrics and plots that describe the outcome of the experiment well. 
 - Discuss the results. Why did improvement _A_ perform better/worse compared to other improvements? Did the outcome match your expectations? Can you recognize any trends or patterns?
 
-## Experiments on paraphrase generation task
+## Experiments on Paraphrase Type Generation
 
 To evaluate paraphrase generation with BART, the metric used is the penalized BLEU score. It is the product of the BLEU score between the predicted paraphrases and the references, and 100 - the BLEU score between predicted paraphrases and inputs. This is scaled by a factor 1/52. The idea is to penalize copying the input sentence. The performance is evaluated on a validation set (20% of the training dataset), as there are no reference sentences provided in the test set.
 
@@ -349,7 +354,7 @@ Sometimes adds tokens at the end to "avoid" being detected of copying the input 
 We initially expected the model to not change that much, because three additional tokens to the model could get lost in the whole  input sequence.
     
 
-Data not suitable: No annotated dataset with quality vectors. To see if in the dataset the sentence pairs are varying enough in the quality dimensions for the model to learn, we calculated all quality vectors for the train set sentence pairs. The distributions suggest that we have syntactic quality relatively even distributed
+Data not suitable: No annotated dataset with quality vectors. To see if in the dataset the sentence pairs are varying enough in the quality dimensions for the model to learn, we calculated all quality vectors for the train set sentence pairs. The distributions suggest that we have syntactic quality relatively even distributed, which is preferable, because the model can capture the meaning of the dimension. However, the other quality dimensions are very similar across all sentence pairs. This makes it hard for the model to understand the meaning
 
 <p align="center">
   <img src="figures/quality_distributions.png" alt="Quality dimensions distributions over the train set" width="95%" />
@@ -398,17 +403,21 @@ predictions
                                                       It has a margin of error of plus or minus three to four percentage points.
 4  Claudia Gonzles Herrera, an assistant attorney general in charge of the case, said the arrests show that Guatemala "takes the defense of its ancient Maya heritage seriously."  Claudia Gonzia Herrera, an attorney attorney in charge of the case, said the defense of its ancient Maya heritage heritage "takes the case."  Claudia Gonzales Herrera, an assistant attorney-general in charge of the case, said the arrests showed that Guatemala took the defence of its Mayan heritage seriously.
     
+<Details>
+    
 | **Index** | **Input**                                                                                                                                                    | **Prediction**                                                                                                                                               | **References**                                                                                                                                                                         |
 |:---------:|:------------------------------------------------------------------------------------------------------------------------------------------------------------:|:-------------------------------------------------------------------------------------------------------------------------------------------------------------:|:---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------:|
 | 0         | Under state law, DeVries must be released to the jurisdiction in which he was convicted.                                                                     | Under state law, DeVries must be released to the jurisdiction in which he was convicted.                                                                      | Under state policy, DeVries was to be returned to San Jose, where he was last convicted.                                                                                                |
 | 1         | Today, we preserve essential tools to foster voice competition in the local market.                                                                          | Today, we preserve essential tools to foster voice competition in the local market.                                                                           | "We preserve essential tools to foster voice competition," Copps said. <br> Today, we preserve tools to foster voice voice in the local market.                                         |
-| 2         | Medical investigators matched the body's teeth to Aronov's dental records this morning, medical examiner's spokeswoman Ellen Borakove said.                  | Medical investigators matched the body's teeth to Aronov's dental records this morning, medical examiner's spokeswoman Ellen Borakove said.                   | Investigators matched the dead woman’s teeth to Aronov's dental records Wednesday morning, medical examiner's spokeswoman Ellen Borakove said.                                          |
-| 3         | In the 2002 study, the margin of error ranged from 1.8 to 4.4 percentage points.                                                                              | In the 2002 study, the margin of error ranged from 1.8 to 4.4 percentage points.                                                                              | It has a margin of error of plus or minus three to four percentage points.                                                                                                              |
-| 4         | Claudia Gonzles Herrera, an assistant attorney general in charge of the case, said the arrests show that Guatemala "takes the defense of its ancient Maya heritage seriously." | Claudia Gonzles Herrera, an assistant attorney general in charge of the case, said the arrests show that Guatemala "takes the defense of its ancient Maya heritage seriously." | Claudia Gonzales Herrera, an assistant attorney-general in charge of the case, said the arrests showed that Guatemala took the defence of its Mayan heritage seriously. |
+| 2         | Medical investigators matched the body's teeth to Aronov's dental records this morning, medical examiner's spokeswoman Ellen Borakove said.                  |  Medical investigators matched the body’s body’s dental records this morning, spokeswoman Ellen Ellen Borakove said                   | Investigators matched the dead woman’s teeth to Aronov's dental records Wednesday morning, medical examiner's spokeswoman Ellen Borakove said.                                          |
+| 3         | In the 2002 study, the margin of error ranged from 1.8 to 4.4 percentage points.                                                                              | In the 2002 study, the margin of error from 1.8 to 4.4 percentage points.                                                                              | It has a margin of error of plus or minus three to four percentage points.                                                                                                              |
+| 4         | Claudia Gonzles Herrera, an assistant attorney general in charge of the case, said the arrests show that Guatemala "takes the defense of its ancient Maya heritage seriously." | Claudia Gonzia Herrera, an attorney attorney in charge of the case, said the defense of its ancient Maya heritage heritage “takes the case.” | Claudia Gonzales Herrera, an assistant attorney-general in charge of the case, said the arrests showed that Guatemala took the defence of its Mayan heritage seriously. |
+</Details> 
+ 
 
     
 <span style="color:red">!!!Training time, plot of different histories!!!</span>.
-    
+
 
 ### Deep Reinforcement Learning
 
@@ -448,7 +457,7 @@ unfortunately, we just realize the bonus task to get a baseline for multitask cl
 
 ### 
 
-## Experiments on pharaphrase detection task
+## Experiments on Paraphrase Type Detection
     
 The following table shows the frequency table for various paraphrase types in the ETPC dataset.
 
@@ -481,7 +490,9 @@ We experimented with various learning rate schedulers, such as get_linear_schedu
 
 Breaking down the Matthews correlation coefficient by class, we obtained the following values: [0.377, 0.243, 0.186, 0.337, 0.602, 0.0, 0.339]. These results indicate that while the model performs reasonably well on most classes, it fails to learn effectively for paraphrase type class 6, as evidenced by a coefficient of 0.0.
 
-In comparison to minBert, we got the best accuracy of 0.20 and Matthews correlation coefficient of 0.110, which is a lot lower than the values for Bart model.
+In comparison to minBert, we got the best accuracy of 0.257 and Matthews correlation coefficient of 0.09, which is a lot lower than the values for Bart model.
+This comparison could highlight some limitations of the minBERT model, given the complexity of the paraphrase detection task.
+
 ## Results
 Summarize all the results of your experiments in tables:
 
@@ -515,8 +526,9 @@ Summarize all the results of your experiments in tables:
 
 | **Paraphrase Type Detection (PTD)** | **Accuracy** |**MCC** |
 |----------------|-----------|------- |
-|Baseline |??%           |??           | 
-|Learning-rate tuning          |83%       |29.8%          
+|Baseline |82.9%           |13.3%           | 
+|Learning-rate tuning          |83.6%       |29.8%|
+|Learning-rate schedular (best) | 83.1% | 17%|
 
 
 | **Paraphrase Type Generation (PTG)** | Penalized BLEU |BLEU | Negative BLEU|
