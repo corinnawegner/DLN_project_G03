@@ -127,7 +127,7 @@ It accepts the following arguments:
 
 If you are unsure how this is done, check any research paper. They all describe their methods/processes. Describe briefly the ideas that you implemented to improve the model. Make sure to indicate how are you using existing ideas and extending them. We should be able to understand your project's contribution. -->
 
-In this section we describe all methods that we used to 
+In this section we describe all methods that we used to improve our models
 
 ### Earlystopping
 *used in: BART generation*
