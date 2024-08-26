@@ -192,7 +192,8 @@ We looked for similar implementations on google scholar but couldn't find a refe
 
  Instead of updating all the model's weights, LoRA freezes the pre-trained model and inserts small, trainable rank decomposition matrices within each layer of the transformer architecture. This approach can reduce the number of trainable parameters and decrease GPU memory requirements. LoRA operates in parallel to the model's feed-forward layers, where it processes input through smaller, intermediate layers before combining the output with the original model's output, allowing for efficient task adaptation with no additional inference latency.
 
-![Description](https://d3lkc3n5th01x7.cloudfront.net/wp-content/uploads/2023/05/15232806/LoRA.svg)
+<p align="center">
+  <img src="figures/lora.png" alt="Scheme of LoRA" width="50%" />
 
 ### Paraphrase Generation with Deep Reinforcement Learning
 
