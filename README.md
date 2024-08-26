@@ -26,6 +26,7 @@ The complete project description with a detailed description of all tasks, datas
 
   
 # Setup instructions 
+<!---
 Explain how we can run your code in this section. We should be able to reproduce the results you've obtained. 
 
 Which files do we have to execute to train/evaluate your models? Write down the command which you used to execute the experiments. We should be able to reproduce the experiments/results.
@@ -37,6 +38,7 @@ _Hint_: At the end of the project you can set up a new environment and follow yo
 * You are only allowed to use libraries that are installed by `setup.sh` (Use `setup_gwdg.sh` if you are using the GWDG clusters).
 * Libraries that give you other pre-trained models or embeddings are not allowed (e.g., `transformers`).
 * Use this template to create your README file of your repository: <https://github.com/gipplab/dnlp_readme_template>
+--->
 
 To create a virtual environment on the cluster reproduce the code, run
 
@@ -44,7 +46,8 @@ To create a virtual environment on the cluster reproduce the code, run
 setup_gwdg.sh
 ```
 
-Libraries not included in the conda environment are listed in 
+Libraries not included in the conda environment are listed in
+
 ```sh
 external_packages.sh
 ```
@@ -63,7 +66,6 @@ Here’s a list of the command-line arguments with their descriptions:
 | `--optimizer`           | Optimizer to use. Default is `Adam`.                                        |
 | `--learning_rate`       | Learning rate for the optimizer. Default is `8e-5`.                         |
 | `--batch_size`          | Batch size for training. Default is `64`.                                   |
-| `--dropout_rate`        | Dropout rate for regularization. Default is `0.1`.                          |
 | `--patience`            | Patience for early stopping. Default is `5`.                                |
 | `--num_epochs`          | Number of epochs for training. Default is `100`.                            |
 | `--alpha`               | Alpha value for loss function engineering. Default is `0.001`.                         |
@@ -97,7 +99,7 @@ run_train_minBERT.sh
 
 
 
-Setup warning: Just around the time of project submission there occured an [issue](https://github.com/nltk/nltk/issues/3308) with the `nltk` library, which is used in the project. If it persists to exist in the future and causes problems with the setup, it might be necessary to download an older version:
+**Setup warning**: Just around the time of project submission there occured an [issue](https://github.com/nltk/nltk/issues/3308) with the `nltk` library, which is used in the project. If it persists to exist in the future and causes problems with the setup, it might be necessary to download an older version:
 
 `
 pip install nltk==3.9b1
@@ -259,7 +261,7 @@ For each experiment answer briefly the questions:
 
 ## Experiments on Paraphrase Type Generation
 
-To evaluate paraphrase generation with BART, the metric used is the penalized BLEU score. It is the product of the BLEU score between the predicted paraphrases and the references, and 100 - the BLEU score between predicted paraphrases and inputs. This is scaled by a factor 1/52. The idea is to penalize copying the input sentence. The performance is evaluated on a validation set (20% of the training dataset), as there are no reference sentences provided in the test set.
+To evaluate paraphrase generation with BART, the metric used is the penalized BLEU score. It is the product of the [BLEU](https://aclanthology.org/P02-1040.pdf) score between the predicted paraphrases and the references, and 100 - the BLEU score between predicted paraphrases and inputs. This is scaled by a factor 1/52. The idea is to penalize copying the input sentence. The performance is evaluated on a validation set (20% of the training dataset), as there are no reference sentences provided in the test set.
 
 ### Standard training enhancements & hyperparameter tuning
 
@@ -501,7 +503,8 @@ In comparison to minBert, we got the best accuracy of 0.257 and Matthews correla
 This comparison could highlight some limitations of the minBERT model, given the complexity of the paraphrase detection task.
 
 ## Results
-Summarize all the results of your experiments in tables:
+
+<!-- Summarize all the results of your experiments in tables: -->
 
 | **Stanford Sentiment Treebank (SST)** | **Metric 1** |**Metric n** |
 |----------------|-----------|------- |
@@ -535,7 +538,7 @@ Summarize all the results of your experiments in tables:
 |----------------|-----------|------- |
 |Baseline |82.9%           |13.3%           | 
 |Learning-rate tuning          |83.6%       |29.8%|
-|Learning-rate schedular (best) | 83.1% | 17%|
+|Learning-rate scheduler (best) | 83.1% | 17%|
 
 
 | **Paraphrase Type Generation (PTG)** | Penalized BLEU |BLEU | Negative BLEU|
@@ -553,11 +556,12 @@ Discuss your results, observations, correlations, etc.
 Results should have three-digit precision.
  
 ### Hyperparameter Optimization 
-Describe briefly how you found your optimal hyperparameter. If you focussed strongly on Hyperparameter Optimization, you can also include it in the Experiment section. 
 
-_Note: Random parameter optimization with no motivation/discussion is not interesting and will be graded accordingly_
+<!-- Describe briefly how you found your optimal hyperparameter. If you focussed strongly on Hyperparameter Optimization, you can also include it in the Experiment section. 
 
-#### BART generation
+_Note: Random parameter optimization with no motivation/discussion is not interesting and will be graded accordingly_-->
+
+#### Paraphrase type generation
 
 Baseline 
 
@@ -569,8 +573,8 @@ Second hyperparameter tuning:
 After Part 01 of the project we first implemented the standard training techniques: early stopping, gradient accumulation, ReduceLROnPlateau, L2 regularization. With this we continued and did a second grid search hyperparameter tuning, more extensive than for the baseline.
 To obtain the best parameters for the model, we implemented grid search over a grid that contained the following parameters:
 
-- Dropout
-	For our hyperparameter tuning, we tried different dropout rates. Dropout sets a certain fraction of parameters in the model to zero during training. This enforces the model to learn representations in different ways, enhancing stability. In BartForConditionalGeneration, a dropout rate of 0.1 is implemented by default. During our hyperparameter grid search, we varied the dropout rate, including also no dropout and 0.3 dropout rate. However, the default dropout rate of 0.1 led to the best result.
+- Dropout rate
+	For our hyperparameter tuning, we tried different dropout rates. In BartForConditionalGeneration, a dropout rate of 0.1 is implemented by default. During our hyperparameter grid search, we varied the dropout rate, including also no dropout and 0.3 dropout rate. However, the default dropout rate of 0.1 led to the best result.
 - Batch size
 	We varied the batch size over the discrete values 32, 64 and 128. A higher batch size [improves ...] but also increases the compute time for training. The high batch size could not be realized without gradient accumulation. We found a batch size of 64 to deliver the best results. 
 - Learning rate
