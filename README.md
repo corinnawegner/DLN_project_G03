@@ -75,10 +75,16 @@ Here’s a list of the command-line arguments with their descriptions:
 | `--tuning_mode`         | Enable tuning mode. This is a flag (mutually exclusive).                    |
 | `--normal_mode`         | Enable normal operation mode. This is a flag (mutually exclusive).          |
 
-
-| Parameter               | Description                                                                 |
-| ----------------------- | --------------------------------------------------------------------------- |
-|`--additional_input` |Use POS tags and NER tags for the input of minBERT.
+To run the minBERT use run_train_minBERT.sh
+| Parameter                     | Description                                                                 |
+| --------------------------------- | --------------------------------------------------------------------------- |
+|`--additional_input` |Use POS tags and NER tags for the input of minBERT.|
+| `--use_gpu`  | Use gpu to train |
+| `--option`  | choose finetune or pretrain |
+| `--task`  | choose which task to work. 'sts', 'sst', 'qqp', 'eptc' or 'multitasks'. |
+| `--hidden_drop_prob` | set the dropout probability for the hidden layers |
+| `--loss_function` | choose loss function 'mse' or 'mnrl' in sts and qqp task |
+| `--add_smooth`  | Fine-Tuning with Regularized Optimization |
 
 Setup warning: Just around the time of project submission there occured an [issue](https://github.com/nltk/nltk/issues/3308) with the `nltk` library, which is used in the project. If it persists to exist in the future and causes problems with the setup, it might be necessary to download an older version:
 
@@ -180,8 +186,8 @@ $$
 In the paper, the authors define a positive reward only at the end of the sentence (i.e. $r_t = r_T$), assigning to the other positions a reward of zero. Thereby, it is possible to apply stochastic gradient descent.
 
 <p align="center">
-  <img src="figures/RL_training.png" alt="RL scheme" width="45%" />
-  <img src="figures/RL_training_2.png" alt="Training algorithm (Figures: Li et. al.)" width="45%" />
+  <img src="figures/RL_training.png" alt="RL scheme" width="60%" />
+  <img src="figures/RL_training_2.png" alt="Training algorithm (Figures: Li et. al.)" width="30%" />
 </p>
 
 
@@ -217,14 +223,6 @@ Linear transformation preserves the absolute distance of the data and will be af
 *used in minBERT*
 
 [Jiang et al., 2020](https://arxiv.org/abs/1911.03437) introduce two methods to avoid the overfitting problem. The first is smoothness-inducing regularization. It makes model changes smoother by adding regularization terms. This gives constraints to the model parameters changing to ensure the output will not drastically change between different inputs. The second is Bregman proximal point optimization. It uses the Bregman distance to define a trust region that limits the magnitude of updating. It ensures stable convergence during the optimization process and avoids overfitting.
-
-### Multitask Fine-Tuning<span style="color:red">(not finished)
-*used in minBERT*
-
-
-
-
-
 
 
 # Experiments
@@ -289,8 +287,11 @@ The score after the secondary hyperparameter tuning results and subsequent obser
 After testing out some values for &alpha;, we found 0.001 to be optimal. It scales the two functions to a range such that the penalty term neither overshadows the loss nor vanishes. We report a penalized BLEU Score of 24.6 for the validation set. Besides, consistent with our expectation, the negative BLEU score rises again to 45.2.
 
 We decided to keep loss function engineering in our training algorithm.
-    
-Let's look at some predicted sentences to evaluate the performance
+
+Let's look at some predicted sentences to evaluate the performance of the model at this state:
+<details>
+
+
     
 | **Inputs**                                                                                                                                                   | **Predictions**                                                                                                                                             | **References**                                                                                                                                                 |
 |--------------------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -300,6 +301,7 @@ Let's look at some predicted sentences to evaluate the performance
 | In the 2002 study, the margin of error ranged from 1.8 to 4.4 percentage points.                                                                              | In the 2002 study, the margin of error of error from 1.4 percentage from 4.4 points.                                                                         | It has a margin of error of plus or minus three to four percentage points.                                                                                        |
 | Claudia Gonzles Herrera, an assistant attorney general in charge of the case, said the arrests show that Guatemala "takes the defense of its ancient Maya heritage seriously." | Claudia Gonzia Herrera Herrera Herrera, an attorney in charge of the case, said the defense of its ancient Maya heritage heritage "ttakes."                  | Claudia Gonzales Herrera, an assistant attorney-general in charge of the case, said the arrests showed that Guatemala took the defence of its Mayan heritage seriously. |
 
+</details>
 
 ### Quality controlled paraphrase generation
 
@@ -321,40 +323,21 @@ The generator was trained like in the experiments before, except for the additio
 
 Compared to the method as described in the paper, we used a different QP model architecture, lexical diversity score and left out the module that adds an additional vector with own desired outcomes for the quality dimensions to the model's output quality vector.
     
-Results:
 
-Epoch 1/20, Loss: 0.4312
-Epoch 2/20, Loss: 0.3592
-Epoch 3/20, Loss: 0.3736
-Epoch 4/20, Loss: 0.3619
-Epoch 5/20, Loss: 0.3622
-Epoch 6/20, Loss: 0.3637
-Epoch 7/20, Loss: 0.3596
-Epoch 8/20, Loss: 0.3630
-Epoch 9/20, Loss: 0.3617
-Epoch 10/20, Loss: 0.3658
-Epoch 11/20, Loss: 0.3622
-Epoch 12/20, Loss: 0.3613
-Epoch 13/20, Loss: 0.3633
-Epoch 14/20, Loss: 0.3621
-Epoch 15/20, Loss: 0.3628
-Epoch 16/20, Loss: 0.3598
-Epoch 17/20, Loss: 0.3627
-Epoch 18/20, Loss: 0.3604
-Epoch 19/20, Loss: 0.3662
-Epoch 20/20, Loss: 0.3650
-Quality predictor training finished
-Training generator.
-Epoch 1/100 completed 
+<p align="center">
+  <img src="figures/loss_qp_model.png" alt="Training history of QP model" width="50%" />
+
+</p>
+
 Best BLEU score: 19.30733564598065 at epoch 20.
 History: [1.334231847657954, 2.2712438743263217, 1.7770529157493915, 2.8951486063460203, 3.3828347750339725, 2.478318410827276, 15.236297532857556, 11.324030237696105, 11.628145653466294, 13.518820458462946, 16.59375013034084, 16.850276618882443, 17.27839394062128, 17.930596048847033, 18.04496620825733, 18.644576547647652, 19.065323352212484, 19.22647598628223, 19.272866718830695, 19.30733564598065, 19.196785892982856, 19.224358438065888, 19.29238279100694, 19.272812110169838, 19.273169076657528]
+    
+    
 Total training time: 2117.39 seconds.
     
 BLEU Score: 36.79190972951326 Negative BLEU Score with input: 27.28810385141908
 Penalized BLEU Score: 19.30733564598065
 
-    
-Some examples: 
     
 Not everytime semantically meaningful:
 Input: Supporters say a city casino will attract tourists and conventioneers who will gamble and spend money in restaurants and stores.
@@ -365,13 +348,18 @@ Sometimes adds tokens at the end to "avoid" being detected of copying the input 
 
 We initially expected the model to not change that much, because three additional tokens to the model could get lost in the whole  input sequence.
     
-Data not suitable: No annotated dataset with quality vectors. Not sure if in the dataset the sentence pairs are varying enough in the quality dimensions for the model to learn
+
+Data not suitable: No annotated dataset with quality vectors. To see if in the dataset the sentence pairs are varying enough in the quality dimensions for the model to learn, we calculated all quality vectors for the train set sentence pairs. The distributions suggest that we have syntactic quality relatively even distributed
+
+<p align="center">
+  <img src="figures/quality_distributions.png" alt="Quality dimensions distributions over the train set" width="95%" />
+</p>
+
+
 
 After training our BART model with the predicted quality vectors, we observed a decrease in penalized BLEU score. Precisely, we saw that the BLEU and negative BLEU were almost identical, with an average BLEU compared to the scores before, but poorer negative BLEU in comparison to the other experiments.
 
 For the poor negative BLEU specifically, we could not find an explanation. Overall, there are many possible causes for the bad performance of the model, as the implementation is pretty extensive. The most likely reasons include:
-
--
 
 <span style="color:red">!!!Unfinished!!!</span>.
     
@@ -422,8 +410,6 @@ predictions
 <span style="color:red">!!!Training time, plot of different histories!!!</span>.
     
 
-
-
 ### Deep Reinforcement Learning
 
 Previous attempts of fine-tuning yielded a penalized BLEU score of maximum ~24. We have seen that the model tends to stay in this range. Therefore, we considered trying other methods to get a better performance of the model. 
@@ -454,6 +440,10 @@ As the measure of our similarity is cosine similarity, we can just transform our
 *used in sts task*
 
 For smoothing, we calculate the sum of squares of all the parameters of the model. Then we multiple the result with a ratio to contral its strength. Here we tried several, however, only very small values do not affect the results, otherwise the results will gradient explode. This may be because the original model did not have extreme overfitting problems. Secondly for the bregman_term, we record the last logits with theta_t. We use bregman_term to penalty the difference with logtis and theta_t. Therefore we avoid too aggressive update. But also only very small value works. This might because we don't need too much additional regularized optimization in our project. 
+
+### Multitask Fine-tuning
+*train sst,sts and qqp together*
+unfortunately, we just realize the bonus task to get a baseline for multitask classifier. We have not implemented any improvements on it.
    
 
 ### 
@@ -487,8 +477,11 @@ Here is a the table for hyperparameter search, for Bart detection.
 | 1e-5          | 16         | 0.828    | 0.186          |
 | 1e-5          | 32         | 0.826    | 0.169          |
     
-## Experiments on minBERT multitask fine-tuning (if we have Bonus 2)
+We experimented with various learning rate schedulers, such as get_linear_schedule_with_warmup and StepLR, to optimize model performance. However, these schedulers did not lead to any improvements; in fact, they often resulted in worse outcomes. This suggests that a fixed learning rate might be more effective for our model. The best accuracy achieved with a fixed learning rate of 5e-5 was 0.836, accompanied by a Matthews correlation coefficient of 0.298 after 15 epochs.
 
+Breaking down the Matthews correlation coefficient by class, we obtained the following values: [0.377, 0.243, 0.186, 0.337, 0.602, 0.0, 0.339]. These results indicate that while the model performs reasonably well on most classes, it fails to learn effectively for paraphrase type class 6, as evidenced by a coefficient of 0.0.
+
+In comparison to minBert, we got the best accuracy of 0.20 and Matthews correlation coefficient of 0.110, which is a lot lower than the values for Bart model.
 ## Results
 Summarize all the results of your experiments in tables:
 
@@ -506,33 +499,31 @@ Summarize all the results of your experiments in tables:
 |Improvement 2        |52.11%|...|
 |...        |...|...|
 
-| **Semantic Textual Similarity (STS)** | **implement** |**Correlation** |
-|----------------|-----------|------- |
-|Baseline |           |69.8%           | 
-|Z-score normalization          |  in function predict_similarity()          |83.5%          
-|MNRL Learning        |in training process|72.3%|
-|Fine-Tuning with Regularized Optimization        |in training process|76.0%|
-|additional input|`--additional input`||
-|merged improvements|with all aboves||
+| **Semantic Textual Similarity (STS)** |**Correlation** |
+|----------------|------- |
+|Baseline | 69.8%           | 
+|Z-score normalization          |83.5%
+|MNRL Learning        |72.3%|
+|Fine-Tuning with Regularized Optimization |76.0%|
+|additional input||
 
-| **Multitask classification** | **implement** |**Accuracy** |
-|----------------|-----------|------- |
-|Baseline |multitask_classifier_bonus.py           |           | 
+| **Multitask classification** |**Accuracy sst** |**Correlation sts** |**Accuracy qqp** |
+|----------------|------- |------- |------- |
+|Baseline | 45.8% | 71.2% |69.2%| 
           
 
 
-| **Paraphrase Type Detection (PTD)** | **Metric 1** |**Metric n** |
+| **Paraphrase Type Detection (PTD)** | **Accuracy** |**MCC** |
 |----------------|-----------|------- |
-|Baseline |45.23%           |...            | 
-|Improvement 1          |58.56%            |...          
-|Improvement 2        |52.11%|...|
-|...        |...|...|
+|Baseline |??%           |??           | 
+|Learning-rate tuning          |83%       |29.8%          
+
 
 | **Paraphrase Type Generation (PTG)** | Penalized BLEU |BLEU | Negative BLEU|
 |----------------|-------|-------|-------|
 |Baseline |-          |45.2 | -
 |Standard training enhancements & hyperparameter tuning |23.6|20.8|59.1|
-|POS & NER tagging |23.7|31.1|39.7|
+|POS & NER tagging |23.8|31.1|39.7|
 |Loss function engineering     |**24.6**|28.2|45.2|
 |Quality Controlled Paraphrase Generation|19.3|36.8|27.3|
 |LoRA |20.4|34.8|30.5|
