@@ -395,7 +395,7 @@ The ratio of trainable parameters scales linearly with the rank. Here's the perc
 
 
 <p align="center">
-  <img src="figures/lora_rank_scaling.png" alt="Percentage of trainable parameters" width="95%" />
+  <img src="figures/lora_rank_scaling.png" alt="Percentage of trainable parameters" width="55%" />
 </p>
 
 <Details>
