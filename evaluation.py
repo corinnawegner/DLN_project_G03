@@ -142,7 +142,7 @@ def model_eval_multitask(
         etpc_sent_ids = []
 
         # Evaluate paraphrase type detection.
-        if task == "etpc" or task == "multitask":
+        if task == "etpc" :
             for step, batch in enumerate(tqdm(etpc_dataloader, desc="eval", disable=TQDM_DISABLE)):
                 (b_ids1, b_mask1, b_ids2, b_mask2, b_labels, b_sent_ids) = (
                     batch["token_ids_1"],
@@ -166,7 +166,7 @@ def model_eval_multitask(
                 etpc_y_true.extend(b_labels)
                 etpc_sent_ids.extend(b_sent_ids)
 
-        if task == "etpc" or task == "multitask":
+        if task == "etpc":
             correct_pred = np.all(np.array(etpc_y_pred) == np.array(etpc_y_true), axis=1).astype(
                 int
             )
@@ -181,7 +181,7 @@ def model_eval_multitask(
             print(f"Sentiment classification accuracy: {sst_accuracy:.3f}")
         if task == "sts" or task == "multitask":
             print(f"Semantic Textual Similarity correlation: {sts_corr:.3f}")
-        if task == "etpc" or task == "multitask":
+        if task == "etpc":
             print(f"Paraphrase Type detection accuracy: {etpc_accuracy:.3f}")
 
     model.train()  # switch back to train model
@@ -281,7 +281,7 @@ def model_eval_test_multitask(
 
         etpc_y_pred = []
         etpc_sent_ids = []
-        if task == "etpc" or task == "multitask":
+        if task == "etpc":
             for step, batch in enumerate(tqdm(etpc_dataloader, desc="eval", disable=TQDM_DISABLE)):
                 (b_ids1, b_mask1, b_ids2, b_mask2, b_sent_ids) = (
                     batch["token_ids_1"],
@@ -455,7 +455,7 @@ def test_model_multitask(args, model, device):
             for p, s in zip(test_sts_sent_ids, test_sts_y_pred):
                 f.write(f"{p}\t{s}\n")
 
-    if task == "etpc" or task == "multitask":
+    if task == "etpc" :
         with open(args.etpc_dev_out, "w+") as f:
             print(f"dev etpc acc :: {dev_etpc_accuracy :.3f}")
             f.write("id,Predicted_Paraphrase_Types\n")
