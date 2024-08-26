@@ -90,6 +90,10 @@ class MultitaskBERT(nn.Module):
                 param.requires_grad = True
         ### TODO
         self.sentiment_classifier = nn.Linear(config.hidden_size, N_SENTIMENT_CLASSES)
+        
+        #self.linear1 = nn.Linear(config.hidden_size, 128) 
+
+        #self.sentiment_classifier = nn.Linear(128, N_SENTIMENT_CLASSES)
 
         self.bi_attention = BiAttention(config.hidden_size)
         
@@ -120,6 +124,7 @@ class MultitaskBERT(nn.Module):
         """
         ### TODO
         output =self.forward(input_ids,attention_mask)
+        # output = F.relu(self.linear1(output))
         sentiment_logits = self.sentiment_classifier(output)
         return sentiment_logits
         # raise NotImplementedError
