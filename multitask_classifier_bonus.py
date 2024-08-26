@@ -133,22 +133,6 @@ class MultitaskBERT(nn.Module):
         #compute the cosinesimilarity
         similarity = torch.nn.CosineSimilarity(dim=1)
         logits = similarity(output1,output2)
-
-        # compute the mean and std
-        # mean_cosine = logits.mean()
-        # std_cosine = logits.std()
-
-        # # normalize cosinesimilarity
-        # z_score = (logits - mean_cosine) / std_cosine
-
-        # # convert the z_score into [0,1]
-        # min_z_score, max_z_score = z_score.min(), z_score.max()
-        # normalized_z_score = (z_score - min_z_score) / (max_z_score - min_z_score)
-
-        # # convert from [0,1] to [0,5]
-        # scaled_z_score = normalized_z_score * 5
-        
-        # return scaled_z_score
         return (logits+1)* 2.5
 
 
