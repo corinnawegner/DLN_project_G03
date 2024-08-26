@@ -266,6 +266,8 @@ For each experiment answer briefly the questions:
 - Add relevant metrics and plots that describe the outcome of the experiment well. 
 - Discuss the results. Why did improvement _A_ perform better/worse compared to other improvements? Did the outcome match your expectations? Can you recognize any trends or patterns? --->
 
+In this section we describe in detail how we used the described methods and present our results
+
 ## Experiments on Paraphrase Type Generation
 
 To evaluate paraphrase generation with BART, the metric used is the penalized BLEU score. The idea is to penalize copying the input sentence. It is given by:
