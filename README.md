@@ -172,7 +172,9 @@ A common problem occurring in the generation task is that the model learns to co
 
 ```math
 \text{loss} = \text{loss}_{\text{crossentropy}} + \text{loss}_{\text{L2}} + \text{loss}_{\text{penalty}}
+```
 
+```math
 \small
 \text{loss}_{\text{penalty}} = \alpha_{\text{ngram}} \times \text{n-gram-penalty}(\text{input}, \text{predictions}) + \alpha_{\text{diversity}} \times \text{diversity-penalty}(\text{input}, \text{predictions})
 ```
