@@ -203,7 +203,7 @@ $$
 In the paper, the authors define a positive reward only at the end of the sentence (i.e. $r_t = r_T$), assigning to the other positions a reward of zero. Thereby, it is possible to apply stochastic gradient descent.
 
 <p align="center">
-  <img src="figures/RL_training.png" alt="RL scheme" width="30%" />
+  <img src="figures/RL_training.png" alt="RL scheme" width="60%" />
   <img src="figures/RL_training_2.png" alt="Training algorithm (Figures: Li et. al.)" width="40%" />
 </p>
 
