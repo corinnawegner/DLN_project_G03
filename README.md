@@ -563,7 +563,7 @@ This comparison could highlight some limitations of the minBERT model, given the
 
 ## Results
 
-This section summarizes our results in tables.
+This section summarizes our obtained scores.
 
 <!-- Summarize all the results of your experiments in tables: -->
 
