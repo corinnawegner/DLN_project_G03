@@ -20,6 +20,11 @@ from evaluation import model_eval_multitask, test_model_multitask
 from optimizer import AdamW
 import socket
 
+# (amin) [
+# from bert import BertModel 
+from transformers import BertTokenizer, BertModel
+# (amin) ]
+
 
 # fix the random seed
 def seed_everything(seed=11711):
@@ -30,6 +35,7 @@ def seed_everything(seed=11711):
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.deterministic = True
+
 
 
 BERT_HIDDEN_SIZE = 768
@@ -63,9 +69,11 @@ class MultitaskBERT(nn.Module):
         self.sentiment_classifier = nn.Linear(config.hidden_size, N_SENTIMENT_CLASSES)
 
         self.output_pp = torch.nn.Linear(BERT_HIDDEN_SIZE * 2, 1)
-        # raise NotImplementedError
 
+        # (amin) [
+        # raise NotImplementedError
         self.paraphrase_types_classifier = nn.Linear(config.hidden_size * 2, 7)  # 7 types of paraphrases
+        # (amin) ]
 
     def forward(self, input_ids, attention_mask):
         """Takes a batch of sentences and produces embeddings for them."""
@@ -76,9 +84,12 @@ class MultitaskBERT(nn.Module):
         # When thinking of improvements, you can later try modifying this
         # (e.g., by adding other layers).
         ### TODO
+
+        # (amin) [
+        # raise NotImplementedError
         output = self.bert(input_ids, attention_mask=attention_mask)
         return output['last_hidden_state'][:, 0, :]
-        # raise NotImplementedError
+        # (amin) ]
 
     def predict_sentiment(self, input_ids, attention_mask):
         """
@@ -153,10 +164,20 @@ class MultitaskBERT(nn.Module):
 
         return (logits + 1) * 2.5
 
-    def predict_paraphrase_types(self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2):
+    def predict_paraphrase_types(
+        self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2
+    ):
         """
         Given a batch of pairs of sentences, outputs logits for detecting the paraphrase types.
+        There are 7 different types of paraphrases.
+        Thus, your output should contain 7 unnormalized logits for each sentence. It will be passed to the sigmoid function
+        during evaluation, and handled as a logit by the appropriate loss function.
+        Dataset: ETPC
         """
+        ### TODO
+
+        # (amin) [
+        # raise NotImplementedError
         # Get the embeddings for both sentences
         outputs_1 = self.forward(input_ids_1, attention_mask_1)
         outputs_2 = self.forward(input_ids_2, attention_mask_2)
@@ -167,6 +188,7 @@ class MultitaskBERT(nn.Module):
         # Pass through the classifier for paraphrase types
         paraphrase_type_logits = self.paraphrase_types_classifier(combined_output)
         return paraphrase_type_logits
+        # (amin) ]
 
 
 def save_model(model, optimizer, args, config, filepath):
@@ -180,9 +202,11 @@ def save_model(model, optimizer, args, config, filepath):
         "torch_rng": torch.random.get_rng_state(),
     }
 
-    torch.save(save_info, filepath)
+    # (amin) [
     print(f"Saving the model to {filepath}.")
-
+    torch.save(save_info, filepath)
+    print(f'Model saved to {filepath}.')
+    # (amin) ]
 
 # TODO Currently only trains on SST dataset!
 def train_multitask(args):
@@ -253,8 +277,21 @@ def train_multitask(args):
             collate_fn=qqp_dev_data.collate_fn,
         )
 
+    # (amin) [
     if args.task == "etpc" or args.task == "multitask": #Todo: The decscription of multitask classification 7.2.2 only includes STS, SST, QQP
+
+        etpc_train_data_transformed = []
+        for i in range(len(etpc_train_data)):
+            binary_label = [0] * 7  # 7 classes
+            for label in etpc_train_data[i][2]:
+                if label != 0:  # Skip the padding zeros
+                    binary_label[label - 1] = 1 # labels range is 1-7
+            etpc_train_data_transformed.append((etpc_train_data[i][0], etpc_train_data[i][1], binary_label, etpc_train_data[i][3]))        
+
+        etpc_train_data = etpc_train_data_transformed
+
         etpc_train_data = SentencePairDataset(etpc_train_data, args)
+
 
         etpc_train_dataloader = DataLoader(
             etpc_train_data,
@@ -262,6 +299,26 @@ def train_multitask(args):
             batch_size=args.batch_size,
             collate_fn=etpc_train_data.collate_fn,
         )
+
+        etpc_dev_data_transformed = []
+        for i in range(len(etpc_dev_data)):
+            binary_label = [0] * 7  # 7 classes
+            for label in etpc_dev_data[i][2]:
+                if label != 0:  # Skip the padding zeros
+                    binary_label[label - 1] = 1 # labels range is 1-7
+            etpc_dev_data_transformed.append((etpc_dev_data[i][0], etpc_dev_data[i][1], binary_label, etpc_dev_data[i][3]))        
+
+        etpc_dev_data = etpc_dev_data_transformed
+
+        etpc_dev_data = SentencePairDataset(etpc_dev_data, args)
+        
+        etpc_dev_dataloader = DataLoader(
+            etpc_dev_data,
+            shuffle=False,
+            batch_size=args.batch_size,
+            collate_fn=etpc_dev_data.collate_fn,
+        )
+    # (amin) ]
 
     # Initialize model
     config = {
@@ -359,10 +416,11 @@ def train_multitask(args):
                 train_loss += loss.item()
                 num_batches += 1
 
-        # Train on ETPC dataset
-        if etpc_train_dataloader:
-          #  print("Type of etpc_dev_dataloader:", type(etpc_dev_dataloader))
-           # print("etpc_dataloader:", etpc_dev_dataloader)
+        if args.task == "etpc" or args.task == "multitask":
+            # Trains the model on the etpc dataset
+            ### TODO
+
+            # raise NotImplementedError
 
             for batch in tqdm(etpc_train_dataloader, desc=f"train-etpc-{epoch + 1:02}", disable=TQDM_DISABLE):
                 b_ids_1, b_ids_2, b_mask_1, b_mask_2, b_labels = (
@@ -370,9 +428,6 @@ def train_multitask(args):
                     batch["attention_mask_1"], batch["attention_mask_2"],
                     batch["labels"]
                 )
-
-                #print(b_labels.shape)
-               # print(logits.shape)
 
                 b_ids_1, b_ids_2 = b_ids_1.to(device), b_ids_2.to(device)
                 b_mask_1, b_mask_2 = b_mask_1.to(device), b_mask_2.to(device)
@@ -387,7 +442,7 @@ def train_multitask(args):
 
                 train_loss += loss.item()
                 num_batches += 1
-
+            
         train_loss = train_loss / num_batches
 
         # Evaluate on the training and development sets

@@ -9,9 +9,21 @@ from torch.utils.data import DataLoader, TensorDataset
 from tqdm import tqdm
 from transformers import AutoTokenizer, BartModel
 
-from optimizer import AdamW
+from sklearn.metrics import matthews_corrcoef
+#from optimizer import AdamW
 #from transformers import AdamW # (amin) deprecated ATTENTION!
-#from torch.optim import AdamW
+from transformers import get_linear_schedule_with_warmup
+from torch.optim.lr_scheduler import StepLR
+
+from torch.optim import AdamW
+
+from multitask_classifier import save_model
+
+import torch.nn.functional as F
+
+import os
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
 
 TQDM_DISABLE = False
 
@@ -20,7 +32,7 @@ class BartWithClassifier(nn.Module):
     def __init__(self, num_labels=7):
         super(BartWithClassifier, self).__init__()
 
-        self.bart = BartModel.from_pretrained("facebook/bart-large", local_files_only=args.local_files_only) # (amin) changed local_files_only=True
+        self.bart = BartModel.from_pretrained("facebook/bart-large", local_files_only=args.local_files_only) # (amin) changed local_files_only=True, local_files_only=args.local_files_only
         self.classifier = nn.Linear(self.bart.config.hidden_size, num_labels)
         self.sigmoid = nn.Sigmoid()
 
@@ -38,7 +50,7 @@ class BartWithClassifier(nn.Module):
         return probabilities
 
 
-def transform_data(dataset, max_length=512, batch_size=2, tokenizer_name="facebook/bart-large"): # (amin) add batch_size=2, tokenizer_name="facebook/bart-large"
+def transform_data(dataset, max_length=512, batch_size=1, tokenizer_name="facebook/bart-large"): # (amin) add batch_size=2, tokenizer_name="facebook/bart-large"
     """
     dataset: pd.DataFrame
 
@@ -79,7 +91,8 @@ def transform_data(dataset, max_length=512, batch_size=2, tokenizer_name="facebo
         padding='max_length',
         truncation=True,
         max_length=max_length,
-        return_tensors='pt'
+        return_tensors='pt',
+        #clean_up_tokenization_spaces=True  # Explicitly setting to True to remove unnecessary spaces
     )
     
     input_ids = encoded['input_ids']
@@ -124,14 +137,14 @@ def transform_data(dataset, max_length=512, batch_size=2, tokenizer_name="facebo
             }
 
     # Create DataLoader
-    #data_loader = DataLoader(tensor_dataset, batch_size=batch_size, shuffle=True, collate_fn=collate_fn) # uncomment if you want a dictionary
-    data_loader = DataLoader(tensor_dataset, batch_size=batch_size) # , shuffle=True (nover put this, because of test data)
+    #data_loader = DataLoader(tensor_dataset, batch_size=batch_size, shuffle=False, collate_fn=collate_fn) # uncomment if you want a dictionary
+    data_loader = DataLoader(tensor_dataset, batch_size=batch_size, shuffle=False) # , shuffle=True (never put this, because of test data)
     
     return data_loader
 
     # (amin) ]
 
-def train_model(model, train_data, dev_data, device, epochs=1, learning_rate=1e-5): # (amin) added  epochs=3, learning_rate=5e-5
+def train_model(model, train_data, dev_data, device, epochs=1, learning_rate=5e-5): # (amin) added  epochs=3, learning_rate=5e-5
     """
     Train the model. You can use any training loop you want. We recommend starting with
     AdamW as your optimizer. You can take a look at the SST training loop for reference.
@@ -149,8 +162,20 @@ def train_model(model, train_data, dev_data, device, epochs=1, learning_rate=1e-
 
     optimizer = AdamW(model.parameters(), lr=learning_rate )
     best_dev_acc = float("-inf")
+    best_dev_mathew = float("-inf")
 
     model.to(device)
+
+    # Calculate total number of training steps
+    total_steps = len(train_data) * epochs
+    print('Total steps:', total_steps)
+
+    # Create the learning rate scheduler
+    #scheduler = get_linear_schedule_with_warmup(optimizer, 
+    #                                            num_warmup_steps=0, # You can adjust this value
+    #                                            num_training_steps=total_steps)
+
+    #scheduler = StepLR(optimizer, step_size=5, gamma=0.5)
 
     # Run for the specified number of epochs
     for epoch in range(epochs):
@@ -180,21 +205,31 @@ def train_model(model, train_data, dev_data, device, epochs=1, learning_rate=1e-
             loss.backward()
             optimizer.step()
 
+            # Update the learning rate
+            #scheduler.step()
+
             train_loss += loss.item()
             num_batches += 1
         
         train_loss = train_loss / num_batches
 
-        train_acc = evaluate_model(model, train_data, device)
-        dev_acc =  evaluate_model(model, dev_data, device)
+        train_acc, _ = evaluate_model(model, train_data, device)
+        dev_acc, dev_mathew =  evaluate_model(model, dev_data, device)
 
         print(
-            f"Epoch {epoch+1:02}: train loss :: {train_loss:.3f}, train :: {train_acc:.3f}, dev :: {dev_acc:.3f}"
+            f"Epoch {epoch+1:02}: train loss :: {train_loss:.3f}, train :: {train_acc:.3f}, dev :: {dev_acc:.3f}, dev_mathew :: {dev_mathew:.3f}"
         )
 
         if dev_acc > best_dev_acc:
             best_dev_acc = dev_acc
-            #save_model(model, optimizer, args, config, args.filepath)
+
+        if dev_mathew > best_dev_mathew:
+            best_dev_mathew = dev_mathew
+            filepath = f"models/bart-finetune-{args.epochs}-{args.learning_rate}-{args.train_batch_size}.pt"  # save path
+            save_model(model, optimizer, args, None, filepath)
+
+    print('Best dev accuracy:', best_dev_acc)
+    print('Best dev Mathews:', best_dev_mathew)
     return model
 
     # (amin) ]
@@ -275,6 +310,7 @@ def evaluate_model(model, test_data, device):
 
     # Compute the accuracy for each label
     accuracies = []
+    matthews_coefficients = []
     for label_idx in range(true_labels_np.shape[1]):
         correct_predictions = np.sum(
             true_labels_np[:, label_idx] == predicted_labels_np[:, label_idx]
@@ -282,11 +318,19 @@ def evaluate_model(model, test_data, device):
         total_predictions = true_labels_np.shape[0]
         label_accuracy = correct_predictions / total_predictions
         accuracies.append(label_accuracy)
+        #compute Matthwes Correlation Coefficient for each paraphrase type
+        #print(true_labels_np[:,label_idx].shape, predicted_labels_np[:,label_idx].shape)
+        matth_coef = matthews_corrcoef(true_labels_np[:,label_idx], predicted_labels_np[:,label_idx])
+        matthews_coefficients.append(matth_coef)
 
     # Calculate the average accuracy over all labels
     accuracy = np.mean(accuracies)
+    matthews_coefficient = np.mean(matthews_coefficients)
+    print("Accuracies:", accuracies)
+    print("Matthews", matthews_coefficients)
     model.train()
-    return accuracy
+    # return accuracy
+    return accuracy, matthews_coefficient
 
 
 def seed_everything(seed=11711):
@@ -307,7 +351,8 @@ def get_args():
     parser.add_argument("--epochs", type=int, default=5)
     parser.add_argument("--train-batch-size", type=int, default=16)
     parser.add_argument("--val-batch-size", type=int, default=32)
-    parser.add_argument("--test-batch-size", type=int, default=32)
+    parser.add_argument("--test-batch-size", type=int, default=1)
+    parser.add_argument("--learning-rate", type=float, default=5e-5)
 
     args = parser.parse_args()
     return args
@@ -321,7 +366,8 @@ def finetune_paraphrase_detection(args):
     #train_dataset = pd.read_csv("data/etpc-paraphrase-train.csv", sep="\t") # (amin) prefer to cast datatypes here
     #test_dataset = pd.read_csv("data/etpc-paraphrase-detection-test-student.csv", sep="\t") # (amin)
 
-    train_dataset = pd.read_csv("data/etpc-paraphrase-train.csv", sep="\t", converters={'paraphrase_types': pd.eval, 'sentence1_tokenized': pd.eval, 'sentence2_tokenized': pd.eval})
+    train_dataset = pd.read_csv("data/etpc/etpc-paraphrase-train.csv", sep="\t", converters={'paraphrase_types': pd.eval, 'sentence1_tokenized': pd.eval, 'sentence2_tokenized': pd.eval})
+    dev_dataset = pd.read_csv("data/etpc/etpc-paraphrase-dev.csv", sep="\t", converters={'paraphrase_types': pd.eval, 'sentence1_tokenized': pd.eval, 'sentence2_tokenized': pd.eval})
     test_dataset = pd.read_csv("data/etpc-paraphrase-detection-test-student.csv", sep="\t", converters={'sentence1_tokenized': pd.eval, 'sentence2_tokenized': pd.eval})
 
     # (amin) test with fewer data ATTENTION!
@@ -332,33 +378,36 @@ def finetune_paraphrase_detection(args):
     # (or in the csv files directly)
 
     # (amin) [
-    #train_data = transform_data(train_dataset)
-    #test_data = transform_data(test_dataset)
+    train_data = transform_data(train_dataset, batch_size=args.train_batch_size)
+    dev_data = transform_data(dev_dataset, batch_size=args.val_batch_size) 
 
     # Shuffle the DataFrame
-    train_df = train_dataset.sample(frac=1).reset_index(drop=True)
+    #train_df = train_dataset.sample(frac=1).reset_index(drop=True)
 
     # Split the DataFrame into training and validation datasets
-    train_frac = 0.8
-    train_size = int(len(train_df) * train_frac)
+    #train_frac = 0.8
+    #train_size = int(len(train_df) * train_frac)
 
-    train_data = train_df.iloc[:train_size]
-    dev_data = train_df.iloc[train_size:]
+    #train_data = train_df.iloc[:train_size]
+    #dev_data = train_df.iloc[train_size:]
 
-    train_data = transform_data(train_data, batch_size=args.train_batch_size) # (amin) change train_dataset -> train_data
-    dev_data = transform_data(dev_data, batch_size=args.val_batch_size)
+    #train_data = transform_data(train_data, batch_size=args.train_batch_size) # (amin) change train_dataset -> train_data
+    #dev_data = transform_data(dev_data, batch_size=args.val_batch_size)
     test_data = transform_data(test_dataset, batch_size=args.test_batch_size)
 
     # (amin) ]
 
     print(f"Loaded {len(train_dataset)} training samples.")
 
-    model = train_model(model, train_data, dev_data, device, epochs=args.epochs)
+    model = train_model(model, train_data, dev_data, device, epochs=args.epochs, learning_rate=args.learning_rate)
 
     print("Training finished.")
 
-    accuracy = evaluate_model(model, dev_data, device)
+    # accuracy = evaluate_model(model, dev_data, device)
+    # accuracy, matthews_corr = evaluate_model(model, train_data, device)
+    accuracy, matthews_corr = evaluate_model(model, dev_data, device)
     print(f"The accuracy of the model is: {accuracy:.3f}")
+    print(f"Matthews Correlation Coefficient of the model is: {matthews_corr:.3f}")
 
     test_ids = test_dataset["id"]
     test_results = test_model(model, test_data, test_ids, device)
@@ -373,4 +422,3 @@ if __name__ == "__main__":
     args = get_args()
     seed_everything(args.seed)
     finetune_paraphrase_detection(args)
-
