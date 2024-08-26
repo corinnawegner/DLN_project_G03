@@ -196,7 +196,9 @@ Reinforcement Learning (RL) is a method where an agent learns to make decisions 
 
 Based on the paper by [Li et. al.](https://arxiv.org/pdf/1711.00279) we implement a Reinforcement learning method to refine the generation model. The generation model acts as a RL-agent We normally finetune the generation model first. In the refinement, we let it generate a paraphrase to an input. Our idea was to use the BERT paraphrase detector for the reward computation. It determines whether the generated sentences are paraphrases. Then, we can change the weights of the generator with the reward signal:
 
-$\nabla_{\theta} \mathcal{L}_{\text{RL}}(\theta) = \sum_{t=1}^{T} \left[ \nabla_{\theta} \log p_{\theta}(\hat{y}_t \mid \hat{Y}_{1:t-1}, X) \right] r_t$
+$$
+\nabla_{\theta} \mathcal{L}_{\text{RL}}(\theta) = \sum_{t=1}^{T} \left[ \nabla_{\theta} \log p_{\theta}(\hat{y}_t \mid \hat{Y}_{1:t-1}, X) \right] r_t
+$$
 
 In the paper, the authors define a positive reward only at the end of the sentence (i.e. $r_t = r_T$), assigning to the other positions a reward of zero. Thereby, it is possible to apply stochastic gradient descent.
 
