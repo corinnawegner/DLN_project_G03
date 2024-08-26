@@ -20,7 +20,7 @@ import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from data.datasets import (
+from datasets import (
     SentenceClassificationDataset,
     SentenceClassificationTestDataset,
     SentencePairDataset,
@@ -28,7 +28,9 @@ from data.datasets import (
     load_multitask_data,
 )
 
-TQDM_DISABLE = True
+from sklearn.metrics import matthews_corrcoef
+
+TQDM_DISABLE = False
 
 
 # Perform model evaluation
@@ -153,6 +155,8 @@ def model_eval_multitask(
                     batch["sent_ids"],
                 )
 
+
+
                 b_ids1 = b_ids1.to(device)
                 b_mask1 = b_mask1.to(device)
                 b_ids2 = b_ids2.to(device)
@@ -167,11 +171,45 @@ def model_eval_multitask(
                 etpc_sent_ids.extend(b_sent_ids)
 
         if task == "etpc" or task == "multitask":
+            
+            # (amin) [
+            # Compute the accuracy for each label
+            accuracies = []
+            matthews_coefficients = []
+            true_labels_np = np.array(etpc_y_true)
+            predicted_labels_np = np.array(etpc_y_pred)
+            for label_idx in range(true_labels_np.shape[1]):
+                correct_predictions = np.sum(
+                    true_labels_np[:, label_idx] == predicted_labels_np[:, label_idx]
+                )
+                total_predictions = true_labels_np.shape[0]
+                label_accuracy = correct_predictions / total_predictions
+                accuracies.append(label_accuracy)
+                #compute Matthwes Correlation Coefficient for each paraphrase type
+                #print(true_labels_np[:,label_idx].shape, predicted_labels_np[:,label_idx].shape)
+                matth_coef = matthews_corrcoef(true_labels_np[:,label_idx], predicted_labels_np[:,label_idx])
+                matthews_coefficients.append(matth_coef)
+
+            # Calculate the average accuracy over all labels
+            accuracy = np.mean(accuracies)
+            matthews_coefficient = np.mean(matthews_coefficients)
+            print("Accuracies:", accuracies)
+            print("Matthews", matthews_coefficients)
+            print("Mean Matthews Coeff:", matthews_coefficient)
+
+            # (amin) ]
+
             correct_pred = np.all(np.array(etpc_y_pred) == np.array(etpc_y_true), axis=1).astype(
                 int
             )
             etpc_accuracy = np.mean(correct_pred)
-            etpc_y_pred = etpc_y_pred.tolist()
+            #print(etpc_y_pred)
+            #print()
+            #print(etpc_y_true)
+            if not isinstance(etpc_y_pred, list):
+                etpc_y_pred = etpc_y_pred.tolist()
+
+            
         else:
             etpc_accuracy = None
 
@@ -322,6 +360,18 @@ def test_model_multitask(args, model, device):
     sst_dev_data, _, quora_dev_data, sts_dev_data, etpc_dev_data = load_multitask_data(
         args.sst_dev, args.quora_dev, args.sts_dev, args.etpc_dev, split="dev"
     )
+
+    # (amin) [
+    etpc_dev_data_transformed = []
+    for i in range(len(etpc_dev_data)):
+        binary_label = [0] * 7  # 7 classes
+        for label in etpc_dev_data[i][2]:
+            if label != 0:  # Skip the padding zeros
+                binary_label[label - 1] = 1 # labels range is 1-7
+        etpc_dev_data_transformed.append((etpc_dev_data[i][0], etpc_dev_data[i][1], binary_label, etpc_dev_data[i][3]))        
+
+    etpc_dev_data = etpc_dev_data_transformed
+    # (amin) ]
 
     sst_test_data = SentenceClassificationTestDataset(sst_test_data, args)
     sst_dev_data = SentenceClassificationDataset(sst_dev_data, args)
