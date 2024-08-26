@@ -204,7 +204,7 @@ In the paper, the authors define a positive reward only at the end of the senten
 
 <p align="center">
   <img src="figures/RL_training.png" alt="RL scheme" width="30%" />
-  <img src="figures/RL_training_2.png" alt="Training algorithm (Figures: Li et. al.)" width="60%" />
+  <img src="figures/RL_training_2.png" alt="Training algorithm (Figures: Li et. al.)" width="40%" />
 </p>
 
 
