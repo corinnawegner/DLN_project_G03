@@ -80,7 +80,7 @@ Here’s a list of the command-line arguments with their descriptions:
 | `--normal_mode`         | Enable normal operation mode. This is a flag (mutually exclusive).          |
 
 
-**Setup warning**: Just around the time of project submission there occured an [issue]    (https://github.com/nltk/nltk/issues/3308) with the `nltk` library, which is used in the project. If it persists to     exist in the future and causes problems with the setup, it might be necessary to download an older version:
+**Setup warning**: Just around the time of project submission there occured an [issue](https://github.com/nltk/nltk/issues/3308) with the `nltk` library, which is used in the project. If it persists to exist in the future and causes problems with the setup, it might be necessary to download an older version:
 
 ```shell
 pip install nltk==3.9b1
