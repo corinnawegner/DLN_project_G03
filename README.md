@@ -164,9 +164,9 @@ Based on [Enhancing Pre-Trained Language Representations with Rich Knowledge for
 
 A common problem occurring in the generation task is that the model learns to copy the input sentence rather than paraphrasing it. This is captured by the negative BLEU score in the validation process. However, our idea was to directly engineer the loss function to tackle this problem. BartForConditionalGeneration, as most language models, uses [cross entropy loss](https://github.com/huggingface/transformers/blob/v4.44.2/src/transformers/models/bart/modeling_bart.py#L1557). Cross entropy computes the loss based on the probability of the sentences given the training corpus. However, it does not necessarily punish a sentence very close to the input or monotonic vocabulary use. To leverage the lexical diversity and avoid common n-grams between input and predicted sentence, we implemented two penalty functions, scaled with corresponding and tuned factors &alpha;, and added the penalty to the loss:
 
-![Equation 1](https://latex.codecogs.com/png.latex?\bg_black\color{White}\text{loss}=\text{loss}_{\text{crossentropy}}+\text{loss}_{\text{L2}}+\text{loss}_{\text{penalty}})
+![Equation 1](https://latex.codecogs.com/png.latex?\color{White}\text{loss}=\text{loss}_{\text{crossentropy}}+\text{loss}_{\text{L2}}+\text{loss}_{\text{penalty}})
 
-![Equation 2](https://latex.codecogs.com/png.latex?\bg_black\color{White}\small\text{loss}_{\text{penalty}}=\alpha_{\text{ngram}}\times\text{n-gram-penalty}(\text{input},\text{predictions})+\alpha_{\text{diversity}}\times\text{diversity-penalty}(\text{input},\text{predictions}))
+![Equation 2](https://latex.codecogs.com/png.latex?\small\color{White}\text{loss}_{\text{penalty}}=\alpha_{\text{ngram}}\times\text{n-gram-penalty}(\text{input},\text{predictions})+\alpha_{\text{diversity}}\times\text{diversity-penalty}(\text{input},\text{predictions}))
 
 
 The n-gram penalty discourages the model from replicating phrases from the input by penalizing the overlap of n-grams between the input and the generated text. It counts the occurrences of n-grams shared by both the input and prediction, with the penalty increasing proportionally to their frequency and length. This method ensures that the model avoids copying sequences directly from the input, promoting more varied outputs.
