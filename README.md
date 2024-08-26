@@ -391,8 +391,12 @@ For the implementation of LoRA, we used the `peft` library. Because we fix our b
     
 After careful adaptation of the rank and learning rate we found a rank of 96 and learning rate of 0.001 to deliver the best result.
   
-The ratio of trainable parameters scales linearly with the rank. Here's the percentage of trainable parameters in our model:
-![Description](https://github.com/corinnawegner/DLN_project_G03/blob/main/figures/lora_rank_scaling.png)
+The ratio of trainable parameters scales linearly with the rank. Here's the percentage of trainable parameters depending on the rank for our model:
+
+
+<p align="center">
+  <img src="figures/lora_rank_scaling.png" alt="Percentage of trainable parameters" width="95%" />
+</p>
 
 <Details>
 
