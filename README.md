@@ -315,7 +315,7 @@ We used the spacy library to obtain linguistic tags for the sequence tokens in t
     BLEU 31.3
     Negative BLEU with input 39.7
 
-Looking at the result, although the penalized BLEU score has only marginally improved, we have at the same time reached a significantly (by ~10) improved alignment of the predictions to the references. This results suggest that this method supports the model in generating more variety in the sentence structure, as it was  Therefore, we keep the tagging for all future experiments.
+Looking at the result, although the penalized BLEU score has only marginally improved, we have at the same time reached a significantly (by ~10) improved alignment of the predictions to the references. This results suggest that this method supports the model in generating more variety in the sentence structure. Therefore, we keep the tagging for all future experiments.
 
 Note that this comes at the cost of a decreased negative BLEU, suggesting an increased copying of input sentences. A reason for this might be that the model must learn to remove the tags from the input in addition to all other input features like paraphrase types, which potentially binds resources of the model. 
 
