@@ -35,7 +35,11 @@ _Hint_: At the end of the project you can set up a new environment and follow yo
 * Libraries that give you other pre-trained models or embeddings are not allowed (e.g., `transformers`).
 * Use this template to create your README file of your repository: <https://github.com/gipplab/dnlp_readme_template>
 
+To create a virtual environment on the cluster reproduce the code, run
 
+```sh
+setup_gwdg.sh
+```
 
 Libraries not included in the conda environment are listed in 
 ```sh
@@ -66,6 +70,7 @@ Here’s a list of the command-line arguments with their descriptions:
 | `--use_gpu`             | Use GPU for training. This is a flag (no value required).                   |
 | `--use_QP`              | Enable Quality Predictor. This is a flag (mutually exclusive).         |
 | `--use_lora`            | Enable LoRA (Low-Rank Adaptation). This is a flag (mutually exclusive).     |
+|`-lora_rank`|    The rank of the LoRa config, note that `--use_lora` needs to be activated. Default `96` |
 | `--use_RL`              | Enable Reinforcement Learning. This is a flag (mutually exclusive).         |
 | `--tuning_mode`         | Enable tuning mode. This is a flag (mutually exclusive).                    |
 | `--normal_mode`         | Enable normal operation mode. This is a flag (mutually exclusive).          |
@@ -96,7 +101,7 @@ We implemented the callback earlystopping to interrupt training if the model sto
 
 *used in: BART generation*
 
-[Dropout](https://jmlr.org/papers/volume15/srivastava14a/srivastava14a.pdf) is a regularization technique used in machine learning, particularly in neural networks, to prevent overfitting. During training, dropout randomly "drops out" (sets to zero) a fraction of the neurons in the network at each iteration. This forces the model to learn more robust and generalized features, as it cannot rely on specific neurons being present. The dropout rate, typically between 0.2 and 0.5, controls the fraction of neurons dropped. At inference time, all neurons are used, but their outputs are scaled to account for the dropout applied during training.
+[Dropout](https://jmlr.org/papers/volume15/srivastava14a/srivastava14a.pdf) is a regularization technique used in machine learning, particularly in neural networks, to prevent overfitting. During training, dropout randomly "drops out" (sets to zero) a fraction of the neurons in the network at each iteration. This forces the model to learn more robust and generalized features, as it cannot rely on specific neurons being present. The dropout rate, typically between 0.<span style="color:red">1</span> and 0.5, controls the fraction of neurons dropped. At inference time, all neurons are used, but their outputs are scaled to account for the dropout applied during training.
 
 ### Gradient accumulation
 
@@ -135,7 +140,7 @@ Based on Xinyan Xiao, et al.([Enhancing Pre-Trained Language Representations wit
 A common problem occurring in the generation task is that the model learns to copy the input sentence rather than paraphrasing it. This is captured by the negative BLEU score in the validation process. However, our idea was to directly engineer the loss function to tackle this problem. BartForConditionalGeneration, as most language models, uses [cross entropy loss](https://github.com/huggingface/transformers/blob/v4.44.2/src/transformers/models/bart/modeling_bart.py#L1557). Cross entropy computes the loss based on the probability of the sentences given the training corpus. However, it does not directly punish a sentence very close to the input or monotonic vocabulary use. To leverage the lexical diversity and avoid common n-grams between input and predicted sentence, we implemented two penalty functions, scaled with corresponding and tuned factors &alpha;, and added the penalty to the loss:
 
 $$
-\text{loss} = \text{loss}_{\text{crossentropy}} + \text{loss}_{\text{l2}} + \text{loss}_{\text{penalty}}
+\text{loss} = \text{loss}_{\text{crossentropy}} + \text{loss}_{\text{L2}} + \text{loss}_{\text{penalty}}
 $$
 
 
@@ -162,6 +167,8 @@ We looked for similar implementations on google scholar but couldn't find a refe
 
 *used in: BART generation*
 
+Reinforcement Learning (RL) is a method where an agent learns to make decisions by interacting with an environment. The agent takes actions, and based on these actions, it receives feedback in the form of rewards. The goal is to maximize the reward by learning which actions lead to the best outcomes (states). This approach helps the agent to assign values (expected rewards) to states and develop an optimal strategy, the so called policy.
+
 Based on the paper by [Li et. al.](https://arxiv.org/pdf/1711.00279) we implement a Reinforcement learning method to refine the generation model. The generation model acts as a RL-agent We normally finetune the generation model first. In the refinement, we let it generate a paraphrase to an input. Our idea was to use the BERT paraphrase detector for the reward computation. It determines whether the generated sentences are paraphrases. Then, we can change the weights of the generator with the reward signal:
 
 $$
@@ -170,12 +177,18 @@ $$
 
 
 
-In the paper, the authors define a positive reward only at the end of the sentence, assigning to the other positions a reward of zero. Thereby, it is possible to apply stochastic gradient descent.
+In the paper, the authors define a positive reward only at the end of the sentence (i.e. $r_t = r_T$), assigning to the other positions a reward of zero. Thereby, it is possible to apply stochastic gradient descent.
+
+<p align="center">
+  <img src="figures/RL_training.png" alt="RL scheme" width="45%" />
+  <img src="figures/RL_training_2.png" alt="Training algorithm (Figures: Li et. al.)" width="45%" />
+</p>
+
 
 ### Quality Controlled Paraphrase Generation
 *used in: BART generation*
 
-[Bandel et. al](https://arxiv.org/pdf/2203.10940) published a method to enhance the quality of predicted paraphrasing by adding a quality vector /bar{q} = (q_{lex}, q_{sem}, q{syn}) to the input of the generator model. The values stand for lexical diversity, semantic similarity and syntactic accuracy, respectively. 
+[Bandel et. al](https://arxiv.org/pdf/2203.10940) published a method to enhance the quality of predicted paraphrasing by adding a quality vector $\bar{q} = (q_{lex}, q_{sem}, q_{syn})$ to the input of the generator model. The values stand for lexical diversity, semantic similarity and syntactic accuracy, respectively. 
 
 A quality predictor (QP) learns to predict appropriate quality vectors for a given sentence. The key here is that for a given input sentence, not every quality dimension can be equally well realized. For example, if a sentence contains a lot of named entities (persons, cities etc.), it is not really possible to obtain a very high lexical diversity. The QP should learn for a sentence which quality dimensions can be realised best and assign these dimensions a high value.
 
@@ -275,7 +288,18 @@ The score after the secondary hyperparameter tuning results and subsequent obser
 
 After testing out some values for &alpha;, we found 0.001 to be optimal. It scales the two functions to a range such that the penalty term neither overshadows the loss nor vanishes. We report a penalized BLEU Score of 24.6 for the validation set. Besides, consistent with our expectation, the negative BLEU score rises again to 45.2.
 
-We decided to keep loss function engineering in our traning algorithm.
+We decided to keep loss function engineering in our training algorithm.
+    
+Let's look at some predicted sentences to evaluate the performance
+    
+| **Inputs**                                                                                                                                                   | **Predictions**                                                                                                                                             | **References**                                                                                                                                                 |
+|--------------------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Under state law, DeVries must be released to the jurisdiction in which he was convicted.                                                                     | Under state law, DeVries must be released to the jurisdiction in which he was convicted.                                                                     | Under state policy, DeVries was to be returned to San Jose, where he was last convicted.                                                                         |
+| Today, we preserve essential tools to foster voice competition in the local market.                                                                          | Today, we preserve tools to foster voice in the foster competition in the local market.                                                                      | "We preserve essential tools to foster voice competition," Copps said.                                                                                           |
+| Medical investigators matched the body's teeth to Aronov's dental records this morning, medical examiner's spokeswoman Ellen Borakove said.                  | Medical investigators matched the body's body's dental records this morning morning.                                                                         | Investigators matched the dead woman's teeth to Aronov's dental records Wednesday morning, medical examiner's spokeswoman Ellen Borakove said.                   |
+| In the 2002 study, the margin of error ranged from 1.8 to 4.4 percentage points.                                                                              | In the 2002 study, the margin of error of error from 1.4 percentage from 4.4 points.                                                                         | It has a margin of error of plus or minus three to four percentage points.                                                                                        |
+| Claudia Gonzles Herrera, an assistant attorney general in charge of the case, said the arrests show that Guatemala "takes the defense of its ancient Maya heritage seriously." | Claudia Gonzia Herrera Herrera Herrera, an attorney in charge of the case, said the defense of its ancient Maya heritage heritage "ttakes."                  | Claudia Gonzales Herrera, an assistant attorney-general in charge of the case, said the arrests showed that Guatemala took the defence of its Mayan heritage seriously. |
+
 
 ### Quality controlled paraphrase generation
 
@@ -329,6 +353,7 @@ Total training time: 2117.39 seconds.
 BLEU Score: 36.79190972951326 Negative BLEU Score with input: 27.28810385141908
 Penalized BLEU Score: 19.30733564598065
 
+    
 Some examples: 
     
 Not everytime semantically meaningful:
@@ -349,40 +374,28 @@ For the poor negative BLEU specifically, we could not find an explanation. Overa
 -
 
 <span style="color:red">!!!Unfinished!!!</span>.
+    
+<p align="center">
+  <img src="figures/training_histories_lora_qp.png" alt="Comparison of validation score with QP and Lora" width="95%" />
+</p>
 
 ### LoRA
 
 For the implementation of LoRA, we used the `peft` library. Because we fix our base model and train the non-pretrained lora layers, we needed to adapt the learning rate to a higher value. We tried different learning rates and rank factors. Initially, we selected a rank factor of 8. This corresponds to having 1,179,648 trainable parameters. In comparison to a total of 407,471,104 parameters when including BART, this led us to a total reduction in the number of trainable parameters to 0.29%. However, using this model, regardless of the learning rate (unless too small and no learning happening), we observed a strong decrease in the performance. When looking at the results, we saw a strong tendency of the model to copy the input (observed through the negative BLEU score and printing out example sentences). Apparently, the number of parameters was just so little that they could only learn to remove the non-sentence tokens from the input.
     
-After careful adaptation of the rank and learning rate we found a rank of ... and learning rate of ... to deliver the best result.
+After careful adaptation of the rank and learning rate we found a rank of 96 and learning rate of 0.001 to deliver the best result.
+  
+The ratio of trainable parameters scales linearly with the rank. Here's the percentage of trainable parameters in our model:
+![Description](https://github.com/corinnawegner/DLN_project_G03/blob/main/figures/lora_rank_scaling.png)
 
-First: 
-lora_config = LoraConfig(
-            r=8,  # rank factor
-            lora_alpha=16,  # Scaling factor
-            lora_dropout=0.1,  # Dropout rate for LoRA layers
-            task_type=TaskType.SEQ_2_SEQ_LM  # Task type for sequence-to-sequence models
-        )
-trainable params: 1,179,648 || all params: 407,471,104 || trainable%: 0.2895
-BLEU Score: 47.662720844917224 Negative BLEU Score with input: 1.4311542740085628
-Penalized BLEU Score: 1.3117828201553903
-The behavior is like for the base model, it learns to copy the input. The Lora parameters are not large enough, the best they can do is teach the model to remove 
+Here we list some results to illustrate the strong influence of the rank:     
 
-Increasing rank to 64, learning rate 0.0007:
-trainable params: 9,437,184 || all params: 415,728,640 || trainable%: 2.2700
-Epoch 11/100 completed in 209.93 seconds.
-BLEU Score: 38.245522330608054 Negative BLEU Score with input: 20.7887013966603
-Penalized BLEU Score: 15.289898913275277
+| **Rank** | **Learning Rate (LR)** | **Trainable Params** | **All Params** | **Trainable %** | **Epochs Completed** | **Early Stopping Epoch** | **Best BLEU Score** | **Total Training Time (seconds)** | **Final BLEU Score** | **Negative BLEU Score with Input** | **Penalized BLEU Score** | **Notes** |
+|:--------:|:----------------------:|:--------------------:|:--------------:|:---------------:|:--------------------:|:------------------------:|:------------------:|:-------------------------------:|:--------------------:|:------------------------------:|:--------------------------:|:---------:|
+| 8        | 2e-4                   | 1,179,648            | 407,471,104     | 0.2895%         | 19                   | 14                        | 2.571               | 3,628.10                        | 47.4937              | 2.8145                          | 2.5706                   | Model learns to copy the input. Lora parameters not large enough. |
+| 64       | 0.0007                 | 9,437,184            | 415,728,640     | 2.2700%         | 17                   | 9                         | 18.1102             | 4,509.56                        | 38.2455              | 20.7887                         | 15.2899                   | Training showed improvement initially but faced fluctuations. |
+| 96       | 1e-3                   | 14,155,776           | 420,447,232     | 3.3668%         | 35                   | 30                        | 20.4458             | 7,600.37                        | 34.8265              | 30.5279                         | 20.4458                   | Training time comparison with normal model: 4166.32 sec. |
 
-Rank 96, LR 1e-3
-trainable params: 14,155,776 || all params: 420,447,232 || trainable%: 3.3668
-Early stopping triggered after 35 epochs.
-Best BLEU score: 20.44575925975802 at epoch 30.
-History: [24.75303958764037, 3.032805274823708, 4.332533089766432, 5.822465677535788, 5.3310573318216505, 6.229703071815389, 7.2746733737213, 10.270871933024555, 12.319687570172732, 17.283334470872664, 18.83440763575973, 19.739507806603584, 18.31044717779765, 18.798891068848953, 19.085792601267602, 19.46442632200913, 19.97711176890905, 20.23226078133432, 20.22467211063291, 20.21862254126531, 20.340287220287337, 20.334138975142082, 20.386125035907405, 20.41770232195451, 20.418908502282395, 20.40979283169857, 20.389238817875455, 20.389285268630886, 20.426818904424547, 20.44575925975802, 20.44575925975802, 20.423311898582167, 20.41996642721619, 20.41996642721619, 20.426204235456797]
-Total training time: 7600.37 seconds.
-Loaded best Lora model
-BLEU Score: 34.8264649983575 Negative BLEU Score with input: 30.527918396471165
-Penalized BLEU Score: 20.44575925975802
     
 predictions
                                                                                                                       references
@@ -397,31 +410,83 @@ predictions
                                                       It has a margin of error of plus or minus three to four percentage points.
 4  Claudia Gonzles Herrera, an assistant attorney general in charge of the case, said the arrests show that Guatemala "takes the defense of its ancient Maya heritage seriously."  Claudia Gonzia Herrera, an attorney attorney in charge of the case, said the defense of its ancient Maya heritage heritage "takes the case."  Claudia Gonzales Herrera, an assistant attorney-general in charge of the case, said the arrests showed that Guatemala took the defence of its Mayan heritage seriously.
     
+| **Index** | **Input**                                                                                                                                                    | **Prediction**                                                                                                                                               | **References**                                                                                                                                                                         |
+|:---------:|:------------------------------------------------------------------------------------------------------------------------------------------------------------:|:-------------------------------------------------------------------------------------------------------------------------------------------------------------:|:---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------:|
+| 0         | Under state law, DeVries must be released to the jurisdiction in which he was convicted.                                                                     | Under state law, DeVries must be released to the jurisdiction in which he was convicted.                                                                      | Under state policy, DeVries was to be returned to San Jose, where he was last convicted.                                                                                                |
+| 1         | Today, we preserve essential tools to foster voice competition in the local market.                                                                          | Today, we preserve essential tools to foster voice competition in the local market.                                                                           | "We preserve essential tools to foster voice competition," Copps said. <br> Today, we preserve tools to foster voice voice in the local market.                                         |
+| 2         | Medical investigators matched the body's teeth to Aronov's dental records this morning, medical examiner's spokeswoman Ellen Borakove said.                  | Medical investigators matched the body's teeth to Aronov's dental records this morning, medical examiner's spokeswoman Ellen Borakove said.                   | Investigators matched the dead woman’s teeth to Aronov's dental records Wednesday morning, medical examiner's spokeswoman Ellen Borakove said.                                          |
+| 3         | In the 2002 study, the margin of error ranged from 1.8 to 4.4 percentage points.                                                                              | In the 2002 study, the margin of error ranged from 1.8 to 4.4 percentage points.                                                                              | It has a margin of error of plus or minus three to four percentage points.                                                                                                              |
+| 4         | Claudia Gonzles Herrera, an assistant attorney general in charge of the case, said the arrests show that Guatemala "takes the defense of its ancient Maya heritage seriously." | Claudia Gonzles Herrera, an assistant attorney general in charge of the case, said the arrests show that Guatemala "takes the defense of its ancient Maya heritage seriously." | Claudia Gonzales Herrera, an assistant attorney-general in charge of the case, said the arrests showed that Guatemala took the defence of its Mayan heritage seriously. |
+
+    
 <span style="color:red">!!!Training time, plot of different histories!!!</span>.
+    
 
-### RL
 
-## Experiments on Sentiment Analysis Task
+
+### Deep Reinforcement Learning
+
+Previous attempts of fine-tuning yielded a penalized BLEU score of maximum ~24. We have seen that the model tends to stay in this range. Therefore, we considered trying other methods to get a better performance of the model. 
+
+We tried to increase the quality of our paraphrases even more by using a different method and chose Deep Reinforcement Learning. To obtain a RL signal (reward), we developed a function that connects a batch of sentence-pairs (outside of the STS dataset) to the MultiTaskBERT model, which was fine tuned on the STS task. The reason why we chose the STS model instead of the QQP-finetuned BERT was that we wanted to have a reward signal that is non-binary, to increase the variety of the signal. 
+    
+The text generation model was first regularly fine-tuned. After this process, we trained it in the RL scenario, where it acts as an agent. The generator model creates a paraphrase to the input sentence, and the MultiTaskBERT is deciding on the quality. The output value, initially ranging from 0 to 5, is scaled to a probability. Then, the weights of the generator are updated according to the gradient described in Methodology.
+
+In the standard training, in the last epochs the learning rate had decreased to around 1e-9. So we decided for the RL training to pick a learning rate of 1e-8, which acknowledges that the model is close to an optimum, but gives the model a chance to step a bit closer into the right direction
+    
+## Experiments on minBERT
 ### Additional Pretraining
+*used in sst, sts, qqp task*
 
 Additional pretraining refers to taking a model that has already initially pretrained and further training it on a domain-specific dataset using tasks such as Masked Language Modeling(MLM) or Next Sentence Predition(NSP). This will help the model to enhance the understanding and performance within that specific domain.     
 
-## Experiments on semantic textual similarity task
 ### Z-Score Normalization
-In baseline, the linear transformation was used to change the logits from cosine similarity in the 
+*used in sts task*
+
+In baseline, the linear transformation was used to change the logits from cosine similarity(range[-1,1]) into a measurement(range[0,5]). And we replace with z-score to count that, results have improved significantly. This because similarity measure is related to the relative distance, whereas the linear transformation only preserves the absolute distance, and a z-score normalisation that preserves more information is better in our project.
 
 ### Multiple Negative Ranking Loss Learning
-as
+*used in sts task*
+
+As the measure of our similarity is cosine similarity, we can just transform our labels into 0 for unsimilar sentence pairs and 1 for similar ones. We set the labels below 3 to 0 and above 3 to 1. And we use the MNRL loss F.binary_cross_entropy_with_logits(logits_new, b_lables_new) for training. This method improves our results because it invreased the model sensitivity.
 
 ### Fine-Tuning with Regularized Optimization
+*used in sts task*
 
-
-### Contrast Learning
-    
+For smoothing, we calculate the sum of squares of all the parameters of the model. Then we multiple the result with a ratio to contral its strength. Here we tried several, however, only very small values do not affect the results, otherwise the results will gradient explode. This may be because the original model did not have extreme overfitting problems. Secondly for the bregman_term, we record the last logits with theta_t. We use bregman_term to penalty the difference with logtis and theta_t. Therefore we avoid too aggressive update. But also only very small value works. This might because we don't need too much additional regularized optimization in our project. 
+   
 
 ### 
 
 ## Experiments on pharaphrase detection task
+    
+The following table shows the frequency table for various paraphrase types in the ETPC dataset.
+
+| Number | Frequency | Frequency Ratio |
+|--------|-----------|-----------------|
+| 1      | 549       | 0.217512        |
+| 2      | 2070      | 0.820127        |
+| 3      | 554       | 0.219493        |
+| 4      | 446       | 0.176704        |
+| 5      | 681       | 0.269810        |
+| 6      | 2512      | 0.995246        |
+| 7      | 2107      | 0.834786        |
+
+As one can see, %99 of of the data points have this parapharase type, and it has the lowest Matthew's correlation coefficient, which is not much better that random guess. Therefore, the problem for this paraphrase type is in the dataset, and since there are very few true negative samples, the model has the most problem learning the task. 
+
+As for any deep learning model, the learning rate has a huge impact on convergence of the model to the optimal solution. Another important factor is batch size, usually bigger batch size has a faster and better convergence (even though not always true), due to memory restriction on the clusters at gwdg, a batch size of size 64 was not possible.
+
+Here is a the table for hyperparameter search, for Bart detection.
+    
+| Learning Rate | Batch Size | Accuracy | Matthews Score |
+|---------------|------------|----------|----------------|
+| 1e-4          | 16         | 0.??     | 0.??           |
+| 1e-4          | 32         | 0.81     | 0.0            |
+| 5e-5          | 16         | 0.83     | 0.08           |
+| 5e-5          | 32         | 0.83     | 0.229          |
+| 1e-5          | 16         | 0.828    | 0.186          |
+| 1e-5          | 32         | 0.826    | 0.169          |
+    
 ## Experiments on minBERT multitask fine-tuning (if we have Bonus 2)
 
 ## Results
@@ -441,12 +506,20 @@ Summarize all the results of your experiments in tables:
 |Improvement 2        |52.11%|...|
 |...        |...|...|
 
-| **Semantic Textual Similarity (STS)** | **Metric 1** |**Metric n** |
+| **Semantic Textual Similarity (STS)** | **implement** |**Correlation** |
 |----------------|-----------|------- |
-|Baseline |45.23%           |...            | 
-|Improvement 1          |58.56%            |...          
-|Improvement 2        |52.11%|...|
-|...        |...|...|
+|Baseline |           |69.8%           | 
+|Z-score normalization          |  in function predict_similarity()          |83.5%          
+|MNRL Learning        |in training process|72.3%|
+|Fine-Tuning with Regularized Optimization        |in training process|76.0%|
+|additional input|`--additional input`||
+|merged improvements|with all aboves||
+
+| **Multitask classification** | **implement** |**Accuracy** |
+|----------------|-----------|------- |
+|Baseline |multitask_classifier_bonus.py           |           | 
+          
+
 
 | **Paraphrase Type Detection (PTD)** | **Metric 1** |**Metric n** |
 |----------------|-----------|------- |
@@ -511,11 +584,11 @@ For example, you could analyze different questions with those plots like:
 ## Members Contribution 
 Explain what member did what in the project:
 
-**Corinna Wegner:** Paraphrase type generation, README
+**Corinna Wegner:** Paraphrase type generation, bonus task(7.2.2), README
 
-**Minyan Fu:** 
+**Minyan Fu:** minBERT(mainly sts task), bonus task(7.2.2)
 
-**Yiyang Huang:**
+**Yiyang Huang:** bonus task(7.2.2)
 
 **Amin Nematbakhsh:**
 
