@@ -164,14 +164,10 @@ Based on [Enhancing Pre-Trained Language Representations with Rich Knowledge for
 
 A common problem occurring in the generation task is that the model learns to copy the input sentence rather than paraphrasing it. This is captured by the negative BLEU score in the validation process. However, our idea was to directly engineer the loss function to tackle this problem. BartForConditionalGeneration, as most language models, uses [cross entropy loss](https://github.com/huggingface/transformers/blob/v4.44.2/src/transformers/models/bart/modeling_bart.py#L1557). Cross entropy computes the loss based on the probability of the sentences given the training corpus. However, it does not necessarily punish a sentence very close to the input or monotonic vocabulary use. To leverage the lexical diversity and avoid common n-grams between input and predicted sentence, we implemented two penalty functions, scaled with corresponding and tuned factors &alpha;, and added the penalty to the loss:
 
-$$
-\text{loss} = \text{loss}_{\text{crossentropy}} + \text{loss}_{\text{L2}} + \text{loss}_{\text{penalty}}
-$$
+![Equation 1](https://latex.codecogs.com/png.latex?\text{loss}=\text{loss}_{\text{crossentropy}}+\text{loss}_{\text{L2}}+\text{loss}_{\text{penalty}})
 
+![Equation 2](https://latex.codecogs.com/png.latex?\small\text{loss}_{\text{penalty}}=\alpha_{\text{ngram}}\times\text{n-gram-penalty}(\text{input},\text{predictions})+\alpha_{\text{diversity}}\times\text{diversity-penalty}(\text{input},\text{predictions}))
 
-$$\small
-\text{loss}_{\text{penalty}} = \alpha_{\text{ngram}} \times \text{n-gram-penalty}(\text{input}, \text{predictions}) + \alpha_{\text{diversity}} \times \text{diversity-penalty}(\text{input}, \text{predictions})
-$$
 
 The n-gram penalty discourages the model from replicating phrases from the input by penalizing the overlap of n-grams between the input and the generated text. It counts the occurrences of n-grams shared by both the input and prediction, with the penalty increasing proportionally to their frequency and length. This method ensures that the model avoids copying sequences directly from the input, promoting more varied outputs.
 
@@ -196,9 +192,8 @@ Reinforcement Learning (RL) is a method where an agent learns to make decisions 
 
 Based on the paper by [Li et. al.](https://arxiv.org/pdf/1711.00279) we implement a Reinforcement learning method to refine the generation model. The generation model acts as a RL-agent We normally finetune the generation model first. In the refinement, we let it generate a paraphrase to an input. Our idea was to use the BERT paraphrase detector for the reward computation. It determines whether the generated sentences are paraphrases. Then, we can change the weights of the generator with the reward signal:
 
-$$
-\nabla_{\theta} \mathcal{L}_{\text{RL}}(\theta) = \sum_{t=1}^{T} \left[ \nabla_{\theta} \log p_{\theta}(\hat{y}_t \mid \hat{Y}_{1:t-1}, X) \right] r_t
-$$
+![Equation](https://latex.codecogs.com/png.latex?\nabla_{\theta}\mathcal{L}_{\text{RL}}(\theta)=\sum_{t=1}^{T}\left[\nabla_{\theta}\log{p_{\theta}(\hat{y}_t|\hat{Y}_{1:t-1},X)}\right]r_t)
+
 
 In the paper, the authors define a positive reward only at the end of the sentence (i.e. $r_t = r_T$), assigning to the other positions a reward of zero. Thereby, it is possible to apply stochastic gradient descent.
 
