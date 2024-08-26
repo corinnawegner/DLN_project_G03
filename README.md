@@ -184,10 +184,6 @@ We looked for similar implementations on google scholar but couldn't find a refe
 
 ![Description](https://d3lkc3n5th01x7.cloudfront.net/wp-content/uploads/2023/05/15232806/LoRA.svg)
 
-$$
-\nabla_{\theta} \mathcal{L}_{\text{RL}}(\theta) = \sum_{t=1}^{T} \left \[ \nabla_{\theta} \log p_{\theta}(\hat{y}_t \mid \hat{Y}_{1:t-1}, X) \right \] r_t
-$$
-
 ### Paraphrase Generation with Deep Reinforcement Learning
 
 *used in: BART generation*
