@@ -79,7 +79,7 @@ hyperparams = {
     'l2_regularization': args.l2_regularization,
     'use_QP': args.use_QP if hasattr(args, 'use_QP') else False,
     'use_lora': args.use_lora if hasattr(args, 'use_lora') else False,
-    'use_RL': args.use_RL if hasattr(args, 'use_RL') else False,
+    'use_RL':  args.use_RL if hasattr(args, 'use_RL') else False,
     'tuning_mode': args.tuning_mode if hasattr(args, 'tuning_mode') else False,
     'normal_mode': args.normal_mode if hasattr(args, 'normal_mode') else False,
 }
@@ -587,7 +587,6 @@ def finetune_paraphrase_generation(args):
         if DEV_MODE:
             evaluator_model_path = r"C:\Users\corin\OneDrive\Physik Master\SoSe 24\Deep Learning for Natural Language Processing\Project\models\finetune-10-1e-05-sts.pt"  # models/finetune-10-1e-05-qqp.pt"
 
-
         model = BartForConditionalGeneration.from_pretrained("facebook/bart-large").to(device)
 
 
@@ -611,10 +610,8 @@ def finetune_paraphrase_generation(args):
                 device,
                 tokenizer,
                 train_dataset=train_dataset,
-                learning_rate=1e-9
+                learning_rate=1e-8
         )
-
-        "model, evaluator_path, train_data, device, tokenizer, train_dataset, learning_rate, num_epochs=10 if not DEV_MODE else 2"
 
         score_after_finetune = evaluate_model(model, val_data, device, tokenizer)
         print(f'Score after fine-tuning with evaluator: {score_after_finetune}\n')
@@ -653,7 +650,7 @@ def finetune_paraphrase_generation(args):
 
         # Configure LoRA
         lora_config = LoraConfig(
-            r= args.lora_rank,  # rank factor
+            r = args.lora_rank,  # rank factor
             lora_alpha=16,  # Scaling factor
             lora_dropout=0.1,  # Dropout rate for LoRA layers
             task_type=TaskType.SEQ_2_SEQ_LM  # Task type for sequence-to-sequence models

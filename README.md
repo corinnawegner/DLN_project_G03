@@ -4,12 +4,11 @@ This is the code by the Group "Text Titans" for the final project of the Deep Le
 
 <!-- toc -->
 
-
 ## Project Description
 
-This project focuses on implementing and improving models for various NLP tasks using BERT and BART. The key tasks include sentiment analysis, question similarity, semantic similarity, paraphrase detection, and paraphrase type generation. Initially, baseline implementations of BERT and BART are created for each task. In the second part, improvements are made on these baselines through techniques like additional pretraining, multitask fine-tuning, and contrastive learning.
+This project focuses on implementing and improving models for various NLP tasks using BERT and BART. The key tasks include sentiment analysis, paraphrase detection, semantic similarity, paraphrase type detection, and paraphrase type generation. We implemented baseline models for each task and improved them using various methods.
 
-The complete project description with a detailed description of all tasks, datasets and project files can be read [here](https://docs.google.com/document/d/1pZiPDbcUVhU9ODeMUI_lXZKQWSsxr7GO/edit?usp=sharing&ouid=112211987267179322743&rtpof=true&sd=true).
+The complete description of all tasks, datasets and project files can be read [here](https://docs.google.com/document/d/1pZiPDbcUVhU9ODeMUI_lXZKQWSsxr7GO/edit?usp=sharing&ouid=112211987267179322743&rtpof=true&sd=true).
 
 
 # Text Titans
@@ -42,19 +41,19 @@ _Hint_: At the end of the project you can set up a new environment and follow yo
 
 To create a virtual environment on the cluster reproduce the code, run
 
-```sh
+```shell
 setup_gwdg.sh
 ```
 
 Libraries not included in the conda environment are listed in
 
-```sh
+```shell
 external_packages.sh
 ```
 
 To run the paraphrase type generation task, use 
 
-```sh
+```shell
 run_train_corinna.sh
 ```
 
@@ -80,9 +79,16 @@ Here’s a list of the command-line arguments with their descriptions:
 | `--tuning_mode`         | Enable tuning mode. This is a flag (mutually exclusive).                    |
 | `--normal_mode`         | Enable normal operation mode. This is a flag (mutually exclusive).          |
 
+
+**Setup warning**: Just around the time of project submission there occured an [issue]    (https://github.com/nltk/nltk/issues/3308) with the `nltk` library, which is used in the project. If it persists to     exist in the future and causes problems with the setup, it might be necessary to download an older version:
+
+```shell
+pip install nltk==3.9b1
+```
+
 To run minBERT use 
 
-```sh
+```shell
 run_train_minBERT.sh
 ```
 
@@ -97,32 +103,31 @@ run_train_minBERT.sh
 | `--add_smooth`  | Fine-Tuning with Regularized Optimization |
 
 
-
-
-**Setup warning**: Just around the time of project submission there occured an [issue](https://github.com/nltk/nltk/issues/3308) with the `nltk` library, which is used in the project. If it persists to exist in the future and causes problems with the setup, it might be necessary to download an older version:
-
-`
-pip install nltk==3.9b1
-`
-
 To execute the code for BART paraphrase type detection task, run the following file.
 ```shell
-run_train_bart_det.sh`
+run_train_bart_det.sh
 ```
-In addition to the arguments above, it also accepts the following arguments:
+It accepts the following arguments:
 
-| Parameter           | Description                       |
-|---------------------|-----------------------------------|
-| `--train-batch-size`| The batch size for training phase. |
-| `--val-batch-size`  | The batch size for validation phase.|
-| `--test-batch-size` | The batch size for testing phase.  |
-| `--learning-rate`   | The learning rate for the optimizer.|
+| Parameter           | Description                                     |
+|---------------------|-------------------------------------------------|
+| `--train-batch-size`| The batch size for training phase.              |
+| `--val-batch-size`  | The batch size for validation phase.            |
+| `--test-batch-size` | The batch size for testing phase.               |
+| `--learning-rate`   | The learning rate for the optimizer.            |
+| `--use-gpu`         | Flag to enable GPU usage for training.          |
+| `--seed`            | Seed for random number generation to ensure reproducibility. |
+| `--local-files-only`| Flag to use only local files and avoid network access. |
+| `--epochs`          | The number of training epochs.                  |
+
 
 # Methodology
 
-In this section explain what and how you did your project. 
+<!--In this section explain what and how you did your project. 
 
-If you are unsure how this is done, check any research paper. They all describe their methods/processes. Describe briefly the ideas that you implemented to improve the model. Make sure to indicate how are you using existing ideas and extending them. We should be able to understand your project's contribution.
+If you are unsure how this is done, check any research paper. They all describe their methods/processes. Describe briefly the ideas that you implemented to improve the model. Make sure to indicate how are you using existing ideas and extending them. We should be able to understand your project's contribution. -->
+
+In this section we describe all methods that we used to 
 
 ### Earlystopping
 *used in: BART generation*
@@ -147,16 +152,11 @@ Gradient accumulation is a technique used in training deep learning models, espe
 
 L2 regularization is a technique used to prevent overfitting in machine learning models by adding a penalty to the loss function. This penalty is proportional to the sum of the squared values of the model's weights. By penalizing large weights, L2 regularization encourages the model to learn smaller, more evenly distributed weights, leading to a model that generalizes better to new data.
 
-### EAdam
-*used in: BART generation*
-
-We wanted to investigate the effect of using different optimizers in our models. We found the [EAdam optimizer](https://www.arxiv.org/pdf/2011.02150). EAdam is a variant of the Adam optimizer. The main difference in EAdam lies in how it handles the constant 𝜖ϵ in the optimization process. In the traditional Adam algorithm, 𝜖ϵ is added to the square root of the exponentially weighted moving average of the squared gradients (𝑣𝑡v t​ ) to prevent division by zero during the update step. EAdam changes the position of this 𝜖ϵ by adding it to 𝑣𝑡v t​  at every step before the bias correction. This adjustment results in the 𝜖ϵ accumulating through the updating process. We used the implementation of EAdam the authors provided on their [GitHub repository](https://github.com/yuanwei2019/EAdam-optimizer). <span style="color:red">!!!Unfinished!!!</span>.
 
 ### Additional Input Features (POS and NER Taggings)
 *used in: BART generation & minBERT*
 
 Based on [Enhancing Pre-Trained Language Representations with Rich Knowledge for Machine Reading](https://aclanthology.org/P19-1226/) by Xinyan Xiao, et al., incorporating rich semantic information such as Part-of-Speech(POS) tags and Named Entity Recognition(NER) tags into pretrained language models to enhance machine reading comprehension abilities. These additional features not only provide more grammatical and semantic infromation but also help the more better understand the contexts. The application of these technologies significantly improves the model's accuracy and efficiency in tasks such as reading comprehension and information extraction.
-
 
 
 ### Loss function engineering
@@ -219,8 +219,6 @@ The generation model learns to associate the quality dimensions with the sentenc
 
 ![Description](https://github.com/corinnawegner/DLN_project_G03/blob/main/figures/Screenshot%202024-08-25%20012814.png)
 
-
-
 ### Additional Layers
 *used in minBERT*
 
@@ -275,11 +273,12 @@ For each experiment answer briefly the questions:
 To evaluate paraphrase generation with BART, the metric used is the penalized BLEU score. The idea is to penalize copying the input sentence. It is given by:
 
 $$
-Penalized BLEU = \frac{BLEU(ref, pred)(1-BLEU(input, pred))}{52}
+\text{Penalized BLEU} = \frac{\text{BLEU}(ref, pred)(1-\text{BLEU}(input, pred))}{52}
 $$
 
 
 The model's performance is evaluated on a validation set (20% of the training dataset), as there are no reference sentences provided in the test set.
+
 
 ### Standard training enhancements & hyperparameter tuning
 
@@ -287,7 +286,13 @@ After implementing the baseline, we started by applying some standard training m
 
 We particularly chose L2 regularization, because it evenly lowers the weights, as opposed to L1 regularization. We believe that over the sequences, all positions could be potentially important.
 
-We also included a different dropout rate in our hyperparameter tuning, but figured that the rate implemented by default performs best already (view hyperparameter tuning section for details). The obtained results (PBLEU: 23.7, BLEU Score: 20.8, Negative BLEU Score with input: 59.1) suggests that the model is not yet able to learn representations close to the references. 
+We also included a different dropout rate in our hyperparameter tuning, but figured that the rate implemented by default performs best already (view hyperparameter tuning section for details). The obtained results 
+
+    Penalized BLEU: 23.7
+    BLEU Score: 20.8
+    Negative BLEU Score with input: 59.1 
+
+suggests that the model is not yet able to learn representations close to the references. 
 
 With the implementation of more features and methods, out of memory issues occured frequently. Batch sizes above 32 were after some point not possible to use, although the batch size of 64 had proven to be better during the baseline hyperparameter search. Therefore, we implemented gradient accumulation to simulate a higher batch size.
 
@@ -295,21 +300,25 @@ With the implementation of more features and methods, out of memory issues occur
 
 We used the spacy library to obtain linguistic tags for the sequence tokens in the input. The scores obtained are: 
 
-|Penalized BLEU | BLEU |Negative BLEU with input |
-|---|---|---|
-|23.8|31.3|39.7|
+    Penalized BLEU 23.8
+    BLEU 31.3
+    Negative BLEU with input 39.7
 
 Looking at the result, although the penalized BLEU score has only marginally improved, we have at the same time reached a significantly (by ~10) improved alignment of the predictions to the references. This results suggest that this method supports the model in generating more variety in the sentence structure, as it was  Therefore, we keep the tagging for all future experiments.
 
 Note that this comes at the cost of a decreased negative BLEU, suggesting an increased copying of input sentences. A reason for this might be that the model must learn to remove the tags from the input in addition to all other input features like paraphrase types, which potentially binds resources of the model. 
 
-### Adam vs. EAdam
 
-A direct comparison between Adam and EAdam reveals that EAdam converges significantly slower than Adam, which contradicts the claims made by the authors of ["EAdam Optimizer: How &epsilon; Impact Adam"](https://www.arxiv.org/pdf/2011.02150). We were unable to find a theoretical explanation for this outcome. However, this observation underscores the strengths of Adam and provides additional evidence as to why it remains the dominant optimizer in deep learning.
+### Just using the pretrained model
 
-![Description](https://github.com/corinnawegner/DLN_project_G03/blob/main/figures/adam_vs_eadam.png)
+We wanted to see how the model performs using the pretrained BART only, with additional POS/NER tagging as input. We found, at first glance, a surprisingly good score:
 
-As this experiment might be relevant side observation from this experiment is the score at the beginning of the training. We investigated the surprisingly high score for the non-finetuned model by looking at the input - prediction pairs. The reason is that the model without finetuning produces copies of the input ID's. Besides the input sentence, these include also the paraphrase types. Thus, the negative BLEU score is already relatively high (due to "uncommon n-grams" - the negative BLEU compares the reproduced sentences with the original sentences from the dataset, not the detokenized input). The model quickly learns to leave out every non-sentence token from the input, resulting in a true copy of the input sentence. At this point the negative BLEU score is tiny and so drops the penalized BLEU. This is where the actual learning of the model begins.
+    BLEU Score: 21.837215942755996 
+    Negative BLEU Score with input: 54.38936934225878
+    Penalized BLEU Score: 22.840623140715724
+
+We investigated the surprisingly high score for the non-finetuned model by looking at the input - prediction pairs. The reason is that the model without finetuning produces copies of the input ID's. Besides the input sentence, these include also the paraphrase types. Thus, the negative BLEU score is already relatively high (due to "uncommon n-grams" - the negative BLEU compares the reproduced sentences with the original sentences from the dataset, not the detokenized input). The model quickly learns to leave out every non-sentence token from the input, resulting in a true copy of the input sentence. At this point the negative BLEU score is tiny and so drops the penalized BLEU. This is where the actual learning of the model begins.
+
 
 ### Loss function engineering
 
@@ -319,10 +328,10 @@ After testing out some values for &alpha;, we found 0.001 to be optimal. It scal
 
 We decided to keep loss function engineering in our training algorithm.
 
-Let's look at some predicted sentences to evaluate the performance of the model at this state:
+
 <details>
 
-
+Let's look at some predicted sentences to evaluate the performance of the model at this state:
     
 | **Inputs**                                                                                                                                                   | **Predictions**                                                                                                                                             | **References**                                                                                                                                                 |
 |--------------------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -341,71 +350,55 @@ To train the QP model, we annotated the sentence pairs in the training data with
 
 |quality dimension|measure|
 |--------| ---------|
-| q_syn(s,s′) | [Normalized tree edit distance](https://github.com/IBM/quality-controlled-paraphrase-generation/blob/main/metrics/syntdiv_metric/syntdiv_metric.py) between the third level constituency parsetrees of the sentence pairs |
-| q_lex(s,s′) | Word-level Levenshtein edit distance |
-| q_sem(s,s′) | [Bleurt score](https://arxiv.org/pdf/2004.04696) |
+| $q_{syn}(s,s′)$ | [Normalized tree edit distance](https://github.com/IBM/quality-controlled-paraphrase-generation/blob/main/metrics/syntdiv_metric/syntdiv_metric.py) between the third level constituency parsetrees of the sentence pairs |
+| $q_{lex}(s,s′)$ | Word-level Levenshtein edit distance |
+| $q_{sem}(s,s′)$ | [Bleurt score](https://arxiv.org/pdf/2004.04696) |
 
 
 As a Quality predictor (QP) model, we used a BERT model and trained it on the sentences1 in our data and quality vectors that were obtained from the pairs. We implemented a training algorithm that includes the paraphrase types, as well as POS/NER tagging. Our idea behind this was that paraphrase types may contain information about the quality dimensions that help the QP interpret the output vectors. Besides, we expected that POS/NER tagging would be especially useful for this task. For example, a large number of named entities could potentially be an indicator to lower the lexical diversity score, as it is not feasible to obtain a paraphrase of a high lexical diversity in this case. To obtain an optimal result, we tried different learning rates for the QP model. 
 
 After a couple attempts with different learning rates and epochs, we trained the QP for 20 epochs with a learning rate of 5e-4.
 
-The generator was trained like in the experiments before, except for the addition of the quality dimensions to the input.
+The generator was trained like in the experiments before, except for the addition of the quality dimensions to the input. The QP model trains a bit slow, as can be seen below:
 
-Compared to the method as described in the paper, we used a different QP model architecture, lexical diversity score and left out the module that adds an additional vector with own desired outcomes for the quality dimensions to the model's output quality vector.
-    
 
 <p align="center">
   <img src="figures/loss_qp_model.png" alt="Training history of QP model" width="50%" />
 
 </p>
+ 
+    Penalized BLEU Score: 19.3
+    BLEU Score: 36.8 
+    Negative BLEU Score with input: 27.3
 
-Best BLEU score: 19.30733564598065 at epoch 20.
-History: [1.334231847657954, 2.2712438743263217, 1.7770529157493915, 2.8951486063460203, 3.3828347750339725, 2.478318410827276, 15.236297532857556, 11.324030237696105, 11.628145653466294, 13.518820458462946, 16.59375013034084, 16.850276618882443, 17.27839394062128, 17.930596048847033, 18.04496620825733, 18.644576547647652, 19.065323352212484, 19.22647598628223, 19.272866718830695, 19.30733564598065, 19.196785892982856, 19.224358438065888, 19.29238279100694, 19.272812110169838, 19.273169076657528]
-    
-    
-Total training time: 2117.39 seconds.
-    
-BLEU Score: 36.79190972951326 Negative BLEU Score with input: 27.28810385141908
-Penalized BLEU Score: 19.30733564598065
+We initially expected the model to not change that much, because three additional tokens to the model could get lost in the whole input sequence. We observe a stronger tendency to copy from the input. The high BLEU score can be explained with the baseline model. It showed the highest BLEU, but basically copied the input sentences. 
 
-    
-Not everytime semantically meaningful:
-Input: Supporters say a city casino will attract tourists and conventioneers who will gamble and spend money in restaurants and stores.
-Prediction: Supporters say a city casino will attract tourists and conventioneers who will spend money in restaurants and restaurants and stores.
-Sometimes adds tokens at the end to "avoid" being detected of copying the input sentence:
- That leaves about three dozen at risk of aid cutoffs, said State Department spokesman Richard Boucher, who did not identify them.
-                                                                    That leaves about three dozen of aid cutoffs, said Richard Boucher, who did not identify them them them.
+We hypothesize two main reasons for the low performance using the QP model:
 
-We initially expected the model to not change that much, because three additional tokens to the model could get lost in the whole  input sequence.
+1. The quality dimensions contain knowledge about the input, that the model uses in a wrong way. Thereby, it is easier for the model to copy the input.
     
-
-Data not suitable: No annotated dataset with quality vectors. To see if in the dataset the sentence pairs are varying enough in the quality dimensions for the model to learn, we calculated all quality vectors for the train set sentence pairs. The distributions suggest that we have syntactic quality relatively even distributed, which is preferable, because the model can capture the meaning of the dimension. However, the other quality dimensions are very similar across all sentence pairs. This makes it hard for the model to understand the meaning
+2. Unsuitable data: To see if in the dataset the sentence pairs are varying enough in the quality dimensions for the model to learn, we calculated all quality vectors for the train set sentence pairs. The distributions suggest that we have syntactic quality relatively even distributed, which is preferable, because the model can capture the meaning of the dimension. However, the other quality dimensions are very similar across all sentence pairs. This makes it hard for the model to understand the meaning of them.
 
 <p align="center">
   <img src="figures/quality_distributions.png" alt="Quality dimensions distributions over the train set" width="95%" />
 </p>
 
-
-
-After training our BART model with the predicted quality vectors, we observed a decrease in penalized BLEU score. Precisely, we saw that the BLEU and negative BLEU were almost identical, with an average BLEU compared to the scores before, but poorer negative BLEU in comparison to the other experiments.
-
-For the poor negative BLEU specifically, we could not find an explanation. Overall, there are many possible causes for the bad performance of the model, as the implementation is pretty extensive. The most likely reasons include:
-
-<span style="color:red">!!!Unfinished!!!</span>.
     
 <p align="center">
   <img src="figures/training_histories_lora_qp.png" alt="Comparison of validation score with QP and Lora" width="95%" />
 </p>
 
+
 ### LoRA
 
-For the implementation of LoRA, we used the `peft` library. Because we fix our base model and train the non-pretrained lora layers, we needed to adapt the learning rate to a higher value. We tried different learning rates and rank factors. Initially, we selected a rank factor of 8. This corresponds to having 1,179,648 trainable parameters. In comparison to a total of 407,471,104 parameters when including BART, this led us to a total reduction in the number of trainable parameters to 0.29%. However, using this model, regardless of the learning rate (unless too small and no learning happening), we observed a strong decrease in the performance. When looking at the results, we saw a strong tendency of the model to copy the input (observed through the negative BLEU score and printing out example sentences). Apparently, the number of parameters was just so little that they could only learn to remove the non-sentence tokens from the input.
+For the implementation of LoRA, we used the `peft` library. Because we fix our base model and train the non-pretrained lora layers, we needed to adapt the learning rate to a higher value. 
     
 After careful adaptation of the rank and learning rate we found a rank of 96 and learning rate of 0.001 to deliver the best result.
   
 The ratio of trainable parameters scales linearly with the rank. Here's the percentage of trainable parameters in our model:
 ![Description](https://github.com/corinnawegner/DLN_project_G03/blob/main/figures/lora_rank_scaling.png)
+
+<Details>
 
 Here we list some results to illustrate the strong influence of the rank:     
 
@@ -415,21 +408,17 @@ Here we list some results to illustrate the strong influence of the rank:
 | 64       | 0.0007                 | 9,437,184            | 415,728,640     | 2.2700%         | 17                   | 9                         | 18.1102             | 4,509.56                        | 38.2455              | 20.7887                         | 15.2899                   | Training showed improvement initially but faced fluctuations. |
 | 96       | 1e-3                   | 14,155,776           | 420,447,232     | 3.3668%         | 35                   | 30                        | 20.4458             | 7,600.37                        | 34.8265              | 30.5279                         | 20.4458                   | Training time comparison with normal model: 4166.32 sec. |
 
+</Details>
     
-predictions
-                                                                                                                      references
-0                                                                                        Under state law, DeVries must be released to the jurisdiction in which he was convicted.                                                      Under state law, DeVries must be released to the jurisdiction in which he was convicted.
-                                        Under state policy, DeVries was to be returned to San Jose, where he was last convicted.
-1                                                                                             Today, we preserve essential tools to foster voice competition in the local market.
-            Today, we preserve tools to foster voice voice in the local market.
-                                                          "We preserve essential tools to foster voice competition," Copps said.
-2                                     Medical investigators matched the body's teeth to Aronov's dental records this morning, medical examiner's spokeswoman Ellen Borakove said.                           Medical investigators matched the body's body's dental records this morning, spokeswoman Ellen Ellen Borakove said.                              Investigators matched the dead womans teeth to Aronovs dental records Wednesday morning, medical examiners spokeswoman Ellen Borakove said.
-3                                                                                                In the 2002 study, the margin of error ranged from 1.8 to 4.4 percentage points.
-      In the 2002 study, the margin of error from 1.8 to 4.4 percentage points.
-                                                      It has a margin of error of plus or minus three to four percentage points.
-4  Claudia Gonzles Herrera, an assistant attorney general in charge of the case, said the arrests show that Guatemala "takes the defense of its ancient Maya heritage seriously."  Claudia Gonzia Herrera, an attorney attorney in charge of the case, said the defense of its ancient Maya heritage heritage "takes the case."  Claudia Gonzales Herrera, an assistant attorney-general in charge of the case, said the arrests showed that Guatemala took the defence of its Mayan heritage seriously.
     
+We observe that for a very low rank/number of parameters they could only learn to remove the non-sentence tokens from the input.
+
+LoRA's advantage is a faster training due to reduced number of trainable parameters. Indeed, the best score using the rank=96 LoRA model was obtained after 9 epochs, compared to 22 epochs for the model version at the point of the loss function engineering.
+
+
 <Details>
+    
+Again, we provide some predictions from the validation set. 
     
 | **Index** | **Input**                                                                                                                                                    | **Prediction**                                                                                                                                               | **References**                                                                                                                                                                         |
 |:---------:|:------------------------------------------------------------------------------------------------------------------------------------------------------------:|:-------------------------------------------------------------------------------------------------------------------------------------------------------------:|:---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------:|
@@ -439,10 +428,6 @@ predictions
 | 3         | In the 2002 study, the margin of error ranged from 1.8 to 4.4 percentage points.                                                                              | In the 2002 study, the margin of error from 1.8 to 4.4 percentage points.                                                                              | It has a margin of error of plus or minus three to four percentage points.                                                                                                              |
 | 4         | Claudia Gonzles Herrera, an assistant attorney general in charge of the case, said the arrests show that Guatemala "takes the defense of its ancient Maya heritage seriously." | Claudia Gonzia Herrera, an attorney attorney in charge of the case, said the defense of its ancient Maya heritage heritage “takes the case.” | Claudia Gonzales Herrera, an assistant attorney-general in charge of the case, said the arrests showed that Guatemala took the defence of its Mayan heritage seriously. |
 </Details> 
- 
-
-    
-<span style="color:red">!!!Training time, plot of different histories!!!</span>.
 
 
 ### Deep Reinforcement Learning
@@ -471,6 +456,21 @@ For the higher learning rate we could achieve a higher improvement
     
 However, the advantage disappears if we select a higher learning rate. Specifically, we tested this method with a learning rate of 1e-6 and obtained a Penalized BLEU score of ~0.0, and a Negative BLEU of virtually 100. This means, the input is fully copied. We explain this observation with the MultiTaskBERT trained on STS. The reward signal it provides is basically a measure of semantic similarity. This is a relevant quality of a paraphrase, however it does not automatically make a good paraphrase. The reward signal only pays attention to this feature, thereby encouraging the model to copy the input sentence. 
 
+<details>
+
+We again provide some example sentences from the validation set:
+    
+| Index | Inputs                                                                                                                                                                          | Predictions                                                                                                                                       | References                                                                                                                                                    |
+|-------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| 0     | Under state law, DeVries must be released to the jurisdiction in which he was convicted.                                                                                         | Under state law, DeVries must be released to the jurisdiction in which he was convicted.                                                          | Under state policy, DeVries was to be returned to San Jose, where he was last convicted.                                                                       |
+| 1     | Today, we preserve essential tools to foster voice competition in the local market.                                                                                              | Today, we preserve tools to foster voice in the foster competition in the local market.                                                            | "We preserve essential tools to foster voice competition," Copps said.                                                                                         |
+| 2     | Medical investigators matched the body's teeth to Aronov's dental records this morning, medical examiner's spokeswoman Ellen Borakove said.                                       | Medical investigators matched the body's body's dental records this morning morning.                                                               | Investigators matched the dead woman's teeth to Aronov's dental records Wednesday morning, medical examiner's spokeswoman Ellen Borakove said.                  |
+| 3     | In the 2002 study, the margin of error ranged from 1.8 to 4.4 percentage points.                                                                                                  | In the 2002 study, the margin of error of error from 1.4.                                                                                          | It has a margin of error of plus or minus three to four percentage points.                                                                                      |
+| 4     | Claudia Gonzales Herrera, an assistant attorney general in charge of the case, said the arrests show that Guatemala "takes the defense of its ancient Maya heritage seriously."  | Clia Gonzia Herrera Herrera Herrera, an attorney in charge of the case, said the defense of the cases of the ancient Maya.                         | Claudia Gonzales Herrera, an assistant attorney-general in charge of the case, said the arrests showed that Guatemala took the defence of its Mayan heritage seriously. |
+
+    
+</details>
+
 To summarize, this method has been proven to be beneficial. However, it must be used with strong care.
     
 ## Experiments on minBERT
@@ -492,9 +492,10 @@ This method was therefore abandoned and not combined with other methods. Potenti
 We used SpaCy to add POS tags and NER tags to the text, allowing the model to obtain more semantically relevant information. As expected, the SST task was largely unaffected since NER and POS tags do not significantly contribute to sentiment analysis. However, we observed improvements in the STS and QQP tasks.
 
 ### Additional Layers
+*used in sst and qqp task*
 For different tasks, we tested adding various layers, and the layers that yielded the best results were as follows:
-* SST Task: We added a linear transformation layer and a ReLU activation layer. Reducing dimensionality before the final classification step allows for further feature extraction and aggregation. Additionally, the ReLU activation function introduces non-linearity, helping the model capture more complex patterns and relationships.
-* QQP Task: We added a BiAttention layer to capture the interdependence between two sentences. By calculating the attention weights between the two sentences, the model can better determine whether the sentences are semantically similar and constitute paraphrases.
+* **SST Task**: We added a linear transformation layer and a ReLU activation layer. Reducing dimensionality before the final classification step allows for further feature extraction and aggregation. Additionally, the ReLU activation function introduces non-linearity, helping the model capture more complex patterns and relationships.
+* **QQP Task**: We added a BiAttention layer to capture the interdependence between two sentences. By calculating the attention weights between the two sentences, the model can better determine whether the sentences are semantically similar and constitute paraphrases.
 ### Z-Score Normalization
 *used in sts task*
 
@@ -536,7 +537,7 @@ The following table shows the frequency table for various paraphrase types in th
 | 6      | 2512      | 0.995246        |
 | 7      | 2107      | 0.834786        |
 
-As one can see, %99 of of the data points have this parapharase type, and it has the lowest Matthew's correlation coefficient, which is not much better that random guess. Therefore, the problem for this paraphrase type is in the dataset, and since there are very few true negative samples, the model has the most problem learning the task. 
+As one can see, %99 of of the data points have this parapharase type, and it get the lowest Matthew's correlation coefficient of 0, which is not better that random guess. Therefore, the problem for this paraphrase type is in the dataset, and since there are very few true negative samples, the model has the most problem learning the task. 
 
 As for any deep learning model, the learning rate has a huge impact on convergence of the model to the optimal solution. Another important factor is batch size, usually bigger batch size has a faster and better convergence (even though not always true), due to memory restriction on the clusters at gwdg, a batch size of size 64 was not possible.
 
@@ -564,19 +565,20 @@ This comparison could highlight some limitations of the minBERT model, given the
 
 <!-- Summarize all the results of your experiments in tables: -->
 
-| **Stanford Sentiment Treebank (SST)** | **Metric 1** |**Metric n** |
-|----------------|-----------|------- |
-|Baseline |50.90%           |...            | 
-|Additional Layer          |%            |...          
-|Improvement 2        |52.11%|...|
-|...        |...|...|
+| **Stanford Sentiment Treebank (SST)** |**Accuracy** |
+|----------------|------- |
+|Baseline | 50.9%           | 
+|Additional Layer          |52.3%
+|Additional Input |51.2%
+|Additional Pretraining|44.8%
 
-| **Quora Question Pairs (QQP)** | **Metric 1** |**Metric n** |
-|----------------|-----------|------- |
-|Baseline |45.23%           |...            | 
-|Improvement 1          |58.56%            |...          
-|Improvement 2        |52.11%|...|
-|...        |...|...|
+
+| **Quora Question Pairs (QQP)** | **Metric 1** |
+|----------------|-----------|
+|Baseline |76.8%           |
+|Additional Input        |77.6%            |
+|Addtional Layer        |79.2%|
+|Additional Pretraining       |68.8%|
 
 | **Semantic Textual Similarity (STS)** |**Correlation** |
 |----------------|------- |
@@ -584,7 +586,8 @@ This comparison could highlight some limitations of the minBERT model, given the
 |Z-score normalization          |83.5%
 |MNRL Learning        |72.3%|
 |Fine-Tuning with Regularized Optimization |76.0%|
-|additional input||
+|Addtional Input|73.4%|
+|Additional Pretraining|68.1%
 
 | **Multitask classification** |**Accuracy sst** |**Correlation sts** |**Accuracy qqp** |
 |----------------|------- |------- |------- |
@@ -596,16 +599,16 @@ This comparison could highlight some limitations of the minBERT model, given the
 |----------------|-----------|------- |
 |Baseline |82.9%           |13.3%           | 
 |Learning-rate tuning          |83.6%       |29.8%|
-|Learning-rate scheduler (best) | 83.1% | 17%|
+|Learning-rate scheduler (best outcome) | 83.1% | 17%|
 
 
 | **Paraphrase Type Generation (PTG)** | Penalized BLEU |BLEU | Negative BLEU|
 |----------------|-------|-------|-------|
 |Baseline |-          |45.2 | -
-|Standard training enhancements & hyperparameter tuning |23.6|20.8|59.1|
+|Standard training enhancements & hyperparameter tuning |23.6|20.8|**59.1**|
 |POS & NER tagging |23.8|31.1|39.7|
 |Loss function engineering     |24.6|28.2|45.2|
-|Quality Controlled Paraphrase Generation|19.3|36.8|27.3|
+|Quality Controlled Paraphrase Generation|19.3|**36.8**|27.3|
 |LoRA |20.4|34.8|30.5|
 |Deep Reinforcement Learning|**24.9**|27.3|47.4|
     
@@ -668,7 +671,7 @@ Explain what member did what in the project:
 
 **Minyan Fu:** minBERT(mainly sts task), bonus task(7.2.2), README
 
-**Yiyang Huang:** bonus task(7.2.2)
+**Yiyang Huang:** minBERT(maily sts and qqp), bonus task(7.2.2), README
 
 **Amin Nematbakhsh:** Paraphrase type detection, bonus task (7.2.1) (baseline implementation)
 
@@ -692,3 +695,30 @@ For the 2024 edition of the DNLP course at the University of Göttingen, the pro
 
 # References 
 Write down all your references (other repositories, papers, etc.) that you used for your project.
+
+[Dropout: A Simple Way to Prevent Neural Networks from Overfitting](https://jmlr.org/papers/volume15/srivastava14a/srivastava14a.pdf), Nitish Srivastava, Geoffrey Hinton, Alex Krizhevsky, Ilya Sutskever, Ruslan Salakhutdinov; 15(56):1929−1958, 2014.
+
+[Enhancing Pre-Trained Language Representations with Rich Knowledge for Machine Reading](https://aclanthology.org/P19-1226/) An Yang, Quan Wang, Jing Liu, Kai Liu, Yajuan Lyu, Hua Wu, Qiaoqiao She, and Sujian Li. 2019. In Proceedings of the 57th Annual Meeting of the Association for Computational Linguistics, pages 2346–2357, Florence, Italy. Association for Computational Linguistics.
+
+[Parameter-Efficient Fine-Tuning Methods for Pretrained Language Models: A Critical Review and Assessment](https://arxiv.org/pdf/2312.12148), Lingling Xu, Haoran Xie, Si-Zhao Joe Qin, Xiaohui Tao, Fu Lee Wang, arXiv preprint.
+
+[LORA: LOW-RANK ADAPTATION OF LARGE LANGUAGE MODELS](https://arxiv.org/pdf/2106.09685), Edward J. Hu, Yelong Shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, Lu Wang, Weizhu Chen, arXiv preprint.
+
+[Paraphrase Generation with Deep Reinforcement Learning](https://arxiv.org/pdf/1711.00279), Zichao Li, Xin Jiang, Lifeng Shang, and Hang Li. 2018. In Proceedings of the 2018 Conference on Empirical Methods in Natural Language Processing, pages 3865–3878, Brussels, Belgium. Association for Computational Linguistics.
+
+[Quality Controlled Paraphrase Generation](https://arxiv.org/pdf/2203.10940), Elron Bandel, Ranit Aharonov, Michal Shmueli-Scheuer, Ilya Shnayderman, Noam Slonim, and Liat Ein-Dor. 2022. In Proceedings of the 60th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers), pages 596–609, Dublin, Ireland. Association for Computational Linguistics.
+
+[Efficient Natural Language Response Suggestion for Smart Reply](https://arxiv.org/abs/1705.00652), Matthew Henderson, Rami Al-Rfou, Brian Strope, Yun-hsuan Sung, Laszlo Lukacs, Ruiqi Guo, Sanjiv Kumar, Balint Miklos, Ray Kurzweil, arXiv preprint.
+
+[SMART: Robust and Efficient Fine-Tuning for Pre-trained Natural Language Models through Principled Regularized Optimization](https://arxiv.org/abs/1911.03437), Haoming Jiang, Pengcheng He, Weizhu Chen, Xiaodong Liu, Jianfeng Gao, Tuo Zhao, arXiv preprint.
+
+[Revisiting Batch Normalization For Practical Domain Adaptation](https:arxiv.org/pdf/200), Yiyang Li, Naiyan Wang, Jianping Shi, arXiv preprint.
+
+[Investigation of improving the pre-training and fine-tuning of BERT model for biomedical relation extraction](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC8978438/), Su P, Vijay-Shanker K.BMC Bioinformatics. 2022 Apr 4;23(1):120.
+
+Sources from Github
+
+[NLTK: Natural Language Toolkit.](https://github.com/nltk/nltk/issues/3308) 
+[Hugging Face. modeling_bart.py. Transformers (v4.44.2)](https://github.com/huggingface/transformers/blob/v4.44.2/src/transformers/models/bart/modeling_bart.py#L1557)
+[IBM. syntdiv_metric.py. Quality-Controlled Paraphrase Generation](https://github.com/IBM/quality-controlled-paraphrase-generation/blob/main/metrics/syntdiv_metric/syntdiv_metric.py)
+
