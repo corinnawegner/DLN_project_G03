@@ -711,7 +711,7 @@ Parts of the scripts and code were altered by [Jan Philip Wahle](https://jpwahle
 For the 2024 edition of the DNLP course at the University of Göttingen, the project was modified by [Niklas Bauer](https://github.com/ItsNiklas/), [Jonas Lührs](https://github.com/JonasLuehrs), ...
 
 # References 
-Write down all your references (other repositories, papers, etc.) that you used for your project.
+<!-- Write down all your references (other repositories, papers, etc.) that you used for your project. -->
 
 [Dropout: A Simple Way to Prevent Neural Networks from Overfitting](https://jmlr.org/papers/volume15/srivastava14a/srivastava14a.pdf), Nitish Srivastava, Geoffrey Hinton, Alex Krizhevsky, Ilya Sutskever, Ruslan Salakhutdinov; 15(56):1929−1958, 2014.
 
