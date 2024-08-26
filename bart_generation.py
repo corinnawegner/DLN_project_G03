@@ -81,7 +81,7 @@ hyperparams = {
     'use_lora': args.use_lora if hasattr(args, 'use_lora') else False,
     'use_RL': args.use_RL if hasattr(args, 'use_RL') else False,
     'tuning_mode': args.tuning_mode if hasattr(args, 'tuning_mode') else False,
-    'normal_mode': args.normal_mode if hasattr(args, 'normal_mode') else False,
+    'normal_mode': True #args.normal_mode if hasattr(args, 'normal_mode') else False,
 }
 
 if hyperparams['POS_NER_tagging'] == True:

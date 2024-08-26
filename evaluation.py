@@ -20,7 +20,7 @@ import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from datasets import (
+from data.datasets import (
     SentenceClassificationDataset,
     SentenceClassificationTestDataset,
     SentencePairDataset,
