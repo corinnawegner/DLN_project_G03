@@ -441,7 +441,7 @@ def train_multitask(args):
                 # # origin loss
                 loss = F.mse_loss(logits.to(torch.float32), b_labels.view(-1).to(torch.float32))
                 
-                # # add smoothing
+                # add smoothing
                 # if theta_t is None or theta_t.shape !=logits.shape:
                 #     theta_t = torch.zeros_like(logits)
                 # rs = sum(param.pow(2.0).sum() for param in model.parameters())
