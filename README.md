@@ -2,6 +2,9 @@
 
 This is the code by the Group "Text Titans" for the final project of the Deep Learning for Natural Language Processing course at the University of Göttingen. 
 
+<!-- toc -->
+
+
 ## Project Description
 
 This project focuses on implementing and improving models for various NLP tasks using BERT and BART. The key tasks include sentiment analysis, question similarity, semantic similarity, paraphrase detection, and paraphrase type generation. Initially, baseline implementations of BERT and BART are created for each task. In the second part, improvements are made on these baselines through techniques like additional pretraining, multitask fine-tuning, and contrastive learning.
@@ -75,7 +78,12 @@ Here’s a list of the command-line arguments with their descriptions:
 | `--tuning_mode`         | Enable tuning mode. This is a flag (mutually exclusive).                    |
 | `--normal_mode`         | Enable normal operation mode. This is a flag (mutually exclusive).          |
 
-To run the minBERT use run_train_minBERT.sh
+To run minBERT use 
+
+```sh
+run_train_minBERT.sh
+```
+
 | Parameter                     | Description                                                                 |
 | --------------------------------- | --------------------------------------------------------------------------- |
 |`--additional_input` |Use POS tags and NER tags for the input of minBERT.|
@@ -85,6 +93,9 @@ To run the minBERT use run_train_minBERT.sh
 | `--hidden_drop_prob` | set the dropout probability for the hidden layers |
 | `--loss_function` | choose loss function 'mse' or 'mnrl' in sts and qqp task |
 | `--add_smooth`  | Fine-Tuning with Regularized Optimization |
+
+
+
 
 Setup warning: Just around the time of project submission there occured an [issue](https://github.com/nltk/nltk/issues/3308) with the `nltk` library, which is used in the project. If it persists to exist in the future and causes problems with the setup, it might be necessary to download an older version:
 
@@ -101,26 +112,19 @@ If you are unsure how this is done, check any research paper. They all describe 
 ### Earlystopping
 *used in: BART generation*
 
-We implemented the callback earlystopping to interrupt training if the model stops improving. From epoch 3 on, every train step the current model is saved, if the score on the validation set is better than the best score from the past. If the score does not improve for 5 epochs and after at least 15 epochs, the training loop gets interrupted and the best model is returned.
+Early stopping is a technique used in machine learning and deep learning to prevent overfitting during the training of a model. It works by monitoring the model's performance on a validation dataset while training. If the model's performance on the validation set stops improving or starts to degrade, training is halted early.
 
 ### Dropout
 
 *used in: BART generation*
 
-[Dropout](https://jmlr.org/papers/volume15/srivastava14a/srivastava14a.pdf) is a regularization technique used in machine learning, particularly in neural networks, to prevent overfitting. During training, dropout randomly "drops out" (sets to zero) a fraction of the neurons in the network at each iteration. This forces the model to learn more robust and generalized features, as it cannot rely on specific neurons being present. The dropout rate, typically between 0.<span style="color:red">1</span> and 0.5, controls the fraction of neurons dropped. At inference time, all neurons are used, but their outputs are scaled to account for the dropout applied during training.
+[Dropout](https://jmlr.org/papers/volume15/srivastava14a/srivastava14a.pdf) is a regularization technique used in machine learning, particularly in neural networks, to prevent overfitting. During training, dropout randomly "drops out" (sets to zero) a fraction of the neurons in the network at each iteration. This forces the model to learn more robust and generalized features, as it cannot rely on specific neurons being present. The dropout rate controls the fraction of neurons dropped. At inference time, all neurons are used, but their outputs are scaled to account for the dropout applied during training.
 
 ### Gradient accumulation
 
 *used in: BART generation*
 
 Gradient accumulation is a technique used in training deep learning models, especially when dealing with large batch sizes that might not fit into memory. Instead of updating the model's weights after each mini-batch, gradient accumulation involves accumulating gradients over several mini-batches and performing a weight update only after a specified number of mini-batches.
-
-
-### ReduceLRONPlateau
-
-*used in: BART generation & minBERT*
-
-ReduceLROnPlateau is a technique used to adjust the learning rate during training based on the performance of the model. Specifically, it monitors a specified metric (such as validation loss) and reduces the learning rate when this metric stops improving, i.e., plateaus. This helps in fine-tuning the model by allowing it to converge more smoothly and potentially reach a better local minimum. It’s particularly useful for training deep neural networks where learning rate adjustments can significantly impact the final performance.
 
 ### L2 regularization 
 
@@ -136,21 +140,21 @@ We wanted to investigate the effect of using different optimizers in our models.
 ### Additional Input Features (POS and NER Taggings)
 *used in: BART generation & minBERT*
 
-Based on Xinyan Xiao, et al.([Enhancing Pre-Trained Language Representations with Rich Knowledge for Machine Reading](https://aclanthology.org/P19-1226/)), incorporating rich semantic information such as Part-of-Speech(POS) tags and Named Entity Recognition(NER) tags into pretrained language models to enhance machine reading comprehension abilities. These additional features not only provide more grammatical and semantic infromation but also help the more better understand the contexts. The application of these technologies significantly improves the model's accuracy and efficiency in tasks such as reading comprehension and information extraction.
+Based on [Enhancing Pre-Trained Language Representations with Rich Knowledge for Machine Reading](https://aclanthology.org/P19-1226/) by Xinyan Xiao, et al., incorporating rich semantic information such as Part-of-Speech(POS) tags and Named Entity Recognition(NER) tags into pretrained language models to enhance machine reading comprehension abilities. These additional features not only provide more grammatical and semantic infromation but also help the more better understand the contexts. The application of these technologies significantly improves the model's accuracy and efficiency in tasks such as reading comprehension and information extraction.
 
 
 
 ### Loss function engineering
 *used in: BART generation*
 
-A common problem occurring in the generation task is that the model learns to copy the input sentence rather than paraphrasing it. This is captured by the negative BLEU score in the validation process. However, our idea was to directly engineer the loss function to tackle this problem. BartForConditionalGeneration, as most language models, uses [cross entropy loss](https://github.com/huggingface/transformers/blob/v4.44.2/src/transformers/models/bart/modeling_bart.py#L1557). Cross entropy computes the loss based on the probability of the sentences given the training corpus. However, it does not directly punish a sentence very close to the input or monotonic vocabulary use. To leverage the lexical diversity and avoid common n-grams between input and predicted sentence, we implemented two penalty functions, scaled with corresponding and tuned factors &alpha;, and added the penalty to the loss:
+A common problem occurring in the generation task is that the model learns to copy the input sentence rather than paraphrasing it. This is captured by the negative BLEU score in the validation process. However, our idea was to directly engineer the loss function to tackle this problem. BartForConditionalGeneration, as most language models, uses [cross entropy loss](https://github.com/huggingface/transformers/blob/v4.44.2/src/transformers/models/bart/modeling_bart.py#L1557). Cross entropy computes the loss based on the probability of the sentences given the training corpus. However, it does not necessarily punish a sentence very close to the input or monotonic vocabulary use. To leverage the lexical diversity and avoid common n-grams between input and predicted sentence, we implemented two penalty functions, scaled with corresponding and tuned factors &alpha;, and added the penalty to the loss:
 
 $$
 \text{loss} = \text{loss}_{\text{crossentropy}} + \text{loss}_{\text{L2}} + \text{loss}_{\text{penalty}}
 $$
 
 
-$$
+$$\small
 \text{loss}_{\text{penalty}} = \alpha_{\text{ngram}} \times \text{n-gram-penalty}(\text{input}, \text{predictions}) + \alpha_{\text{diversity}} \times \text{diversity-penalty}(\text{input}, \text{predictions})
 $$
 
@@ -226,12 +230,15 @@ Linear transformation preserves the absolute distance of the data and will be af
 [Jiang et al., 2020](https://arxiv.org/abs/1911.03437) introduce two methods to avoid the overfitting problem. The first is smoothness-inducing regularization. It makes model changes smoother by adding regularization terms. This gives constraints to the model parameters changing to ensure the output will not drastically change between different inputs. The second is Bregman proximal point optimization. It uses the Bregman distance to define a trust region that limits the magnitude of updating. It ensures stable convergence during the optimization process and avoids overfitting.
 
 ### Learning rate Scheduler
-*used in BART detection*
+*used in BART detection, BART generation & minBERT**
 
-A learning rate scheduler is a strategy used to adjust the learning rate during training to improve model convergence and performance. It dynamically changes the learning rate according to a pre-defined schedule or rule, helping the model escape local minima and converge more smoothly. Two commonly used learning rate schedulers are get_linear_schedule_with_warmup and StepLR.
+A learning rate scheduler is a strategy used to adjust the learning rate during training to improve model convergence and performance. It dynamically changes the learning rate according to a pre-defined schedule or rule, helping the model escape local minima and converge more smoothly. Commonly used learning rate schedulers are ReduceLROnPlateau get_linear_schedule_with_warmup and StepLR.
+
+ReduceLROnPlateau monitors a specified metric (such as validation loss) and reduces the learning rate when this metric stops improving, i.e., plateaus. This helps in fine-tuning the model by allowing it to converge more smoothly and potentially reach a better local minimum. It’s particularly useful for training deep neural networks where learning rate adjustments can significantly impact the final performance.
 
 # Experiments
-Keep track of your experiments here. What are the experiments? Which tasks and models are you considering?
+
+<!---Keep track of your experiments here. What are the experiments? Which tasks and models are you considering?
 
 Write down all the main experiments and results you did, even if they didn't yield an improved performance. Bad results are also results. The main findings/trends should be discussed properly. Why a specific model was better/worse than the other?
 
@@ -248,7 +255,7 @@ For each experiment answer briefly the questions:
 - What have you changed compared to the base model (or to previous experiments, if you run experiments on top of each other)?
 - What were the results?
 - Add relevant metrics and plots that describe the outcome of the experiment well. 
-- Discuss the results. Why did improvement _A_ perform better/worse compared to other improvements? Did the outcome match your expectations? Can you recognize any trends or patterns?
+- Discuss the results. Why did improvement _A_ perform better/worse compared to other improvements? Did the outcome match your expectations? Can you recognize any trends or patterns? --->
 
 ## Experiments on Paraphrase Type Generation
 
