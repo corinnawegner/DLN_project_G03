@@ -113,11 +113,6 @@ class MultitaskBERT(nn.Module):
 
         output = self.output_pp(combined_output)
         
-        
-        # pass on sigmoid into probabilities and make it into 0 or 1
-        # probabilities = torch.sigmoid(output, dim=1)
-        # predictions = (probabilities > 0.5).int()
-        
         return output
 
         # raise NotImplementedError
@@ -138,21 +133,22 @@ class MultitaskBERT(nn.Module):
         similarity = torch.nn.CosineSimilarity(dim=1)
         logits = similarity(output1,output2)
 
-        # compute the mean and std
-        mean_cosine = logits.mean()
-        std_cosine = logits.std()
+        # # # compute the mean and std
+        # mean_cosine = logits.mean()
+        # std_cosine = logits.std()
 
-        # normalize cosinesimilarity
-        z_score = (logits - mean_cosine) / std_cosine
+        # # normalize cosinesimilarity
+        # z_score = (logits - mean_cosine) / std_cosine
 
-        # convert the z_score into [0,1]
-        min_z_score, max_z_score = z_score.min(), z_score.max()
-        normalized_z_score = (z_score - min_z_score) / (max_z_score - min_z_score)
+        # # convert the z_score into [0,1]
+        # min_z_score, max_z_score = z_score.min(), z_score.max()
+        # normalized_z_score = (z_score - min_z_score) / (max_z_score - min_z_score)
 
-        # convert from [0,1] to [0,5]
-        scaled_z_score = normalized_z_score * 5
+        # # convert from [0,1] to [0,5]
+        # scaled_z_score = normalized_z_score * 5
         
-        return scaled_z_score
+        # return scaled_z_score
+        return (logits+1)* 2.5
 
     def predict_similarity_unmse(self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2):
         """
@@ -406,13 +402,7 @@ def train_multitask(args):
                 # smoothness_term = 0.01*rs 
                 # bregman_term = 0.01 * torch.sum((logits - theta_t) ** 2) 
                 # loss = loss + smoothness_term + bregman_term
-                # theta_t = logits.detach()
-
-                # loss = simcse_unsup_loss(logits)
-
-                #sim_cse_sup
-                
-
+                # theta_t = logits.detach()              
 
                 loss.backward()
                 optimizer.step()
@@ -441,27 +431,17 @@ def train_multitask(args):
                 b_labels = b_labels.to(device)
 
                 optimizer.zero_grad()
-                # logits= model.predict_similarity(b_ids_1,  b_mask_1, b_ids_2, b_mask_2)
-                #origin loss
-                # loss = F.mse_loss(logits.to(torch.float32), b_labels.view(-1).to(torch.float32))
-                # l1_loss is better here as we may have extreme value in dataset
-                # loss = F.l1_loss(logits.to(torch.float32), b_labels.view(-1).to(torch.float32))
-                # cos loss
-                # loss = 1 - F.cosine_similarity(logits.to(torch.float32), b_labels.view(-1).to(torch.float32),dim=0)
-                # loss.mean()
-                # # 7.1.2
-                # # MNRL_LOSS
-                # logits = 0.4*logits-2
-                # targets = torch.zeros_like(logits[:-1])
-                # for i in range(len(b_labels)-1):
-                #     if b_labels[i] > b_labels[i+1]:
-                #         targets[i] = 1
-                #     else:
-                #         targets[i] = -1
-                # loss = nn.MarginRankingLoss()(logits[:-1], logits[1:], targets)
-                # #MNRL_LOSS
+                logits= model.predict_similarity(b_ids_1,  b_mask_1, b_ids_2, b_mask_2)
+                
+                # # MNRL loss
+                # logits_new = 0.4*logits -1
+                # b_lables_new = (b_labels>=3.0).float()
+                # loss = F.binary_cross_entropy_with_logits(logits_new, b_lables_new)
 
-                # # #add smoothing
+                # # origin loss
+                loss = F.mse_loss(logits.to(torch.float32), b_labels.view(-1).to(torch.float32))
+                
+                # # add smoothing
                 # if theta_t is None or theta_t.shape !=logits.shape:
                 #     theta_t = torch.zeros_like(logits)
                 # rs = sum(param.pow(2.0).sum() for param in model.parameters())
@@ -470,7 +450,7 @@ def train_multitask(args):
                 # loss = loss + smoothness_term + bregman_term
                 # theta_t = logits.detach()
 
-                # # simcse_supversied
+                # # # simcse_supversied
                 # logits= model.predict_similarity_supmse(b_ids_1,  b_mask_1, b_ids_2, b_mask_2)
 
                 # n = b_labels.size(0)
@@ -480,22 +460,22 @@ def train_multitask(args):
                 # for i in range(n):
                 #     b_sim_matrix[i, n + i] = b_labels[i]
                 #     b_sim_matrix[n + i, i] = b_labels[i]
-                # positive_mask = b_sim_matrix>=3
-                # loss = F.mse_loss(logits.to(torch.float32), b_sim_matrix)
+                # b_sim_matrix = (b_sim_matrix >= 3).int()
+                # loss = F.mse_loss(logits.to(torch.float32), b_sim_matrix.to(torch.float32))
 
-                # simcse_unsupversied
-                logits = model.predict_similarity_unmse(b_ids_1,  b_mask_1, b_ids_2, b_mask_2)
-                b_size = b_ids_1.size(0)
-                un_labels = torch.arange(b_size, device=device)
-                b_sim_matrix = torch.zeros((2 * b_size, 2 * b_size), device=device)
+                # # simcse_unsupversied
+                # logits = model.predict_similarity_unmse(b_ids_1,  b_mask_1, b_ids_2, b_mask_2)
+                # b_size = b_ids_1.size(0)
+                # un_labels = torch.arange(b_size, device=device)
+                # b_sim_matrix = torch.zeros((2 * b_size, 2 * b_size), device=device)
 
-                # 填充相似度矩阵
-                for i in range(b_size):
-                    b_sim_matrix[b_size, b_size + i] = un_labels[i]
-                    b_sim_matrix[b_size + i, i] = un_labels[i]
+                # # 填充相似度矩阵
+                # for i in range(b_size):
+                #     b_sim_matrix[i, b_size + i] = un_labels[i]
+                #     b_sim_matrix[b_size + i, i] = un_labels[i]
 
-                # 使用对比损失
-                loss = F.mse_loss(logits.to(torch.float32), b_sim_matrix.to(torch.float32))
+                # # 使用对比损失
+                # loss = F.mse_loss(logits.to(torch.float32), b_sim_matrix.to(torch.float32))
 
                 loss.backward()
                 optimizer.step()
@@ -526,7 +506,9 @@ def train_multitask(args):
 
                 optimizer.zero_grad()
                 logits = model.predict_paraphrase_types(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
-                loss = F.binary_cross_entropy_with_logits(logits.view(-1).to(torch.float32), b_labels.view(-1).to(torch.float32))
+                # MNRL
+                # logits = model.predict_similarity(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
+                # loss = F.binary_cross_entropy_with_logits(logits.view(-1).to(torch.float32), b_labels.view(-1).to(torch.float32))
                 loss.backward()
                 optimizer.step()
 
