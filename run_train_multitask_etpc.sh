@@ -1,24 +1,23 @@
-#!/bin/bash -l
-#SBATCH --job-name=train-bart-generation
-#SBATCH -t 20:00:00                  # estimated time # TODO: adapt to your needs
+#!/bin/bash
+#SBATCH --job-name=train-minBert-etpc-task
+#SBATCH -t 1:00:00                  # estimated time # TODO: adapt to your needs
 #SBATCH -p grete                     # the partition you are training on (i.e., which nodes), for nodes see sinfo -p grete:shared --format=%N,%G
 #SBATCH -G A100:1                    # take 1 GPU, see https://docs.hpc.gwdg.de/compute_partitions/gpu_partitions/index.html for more options
 #SBATCH --mem-per-gpu=8G             # setting the right constraints for the splitted gpu partitions
 #SBATCH --nodes=1                    # total number of nodes
 #SBATCH --ntasks=1                   # total number of tasks
 #SBATCH --cpus-per-task=8            # number cores per task
-#SBATCH --mail-type=all              # send mail when job begins and ends
-#SBATCH --mail-user=c.wegner01@stud.uni-goettingen.de
+#SBATCH --mail-type=BEGIN,END        # send mail when job begins and ends
+#SBATCH --mail-user=amin.nematbakhsh@stud.uni-goettingen.de   
 #SBATCH --output=./slurm_files/slurm-%x-%j.out     # where to write output, %x give job name, %j names job id
-#aSBATCH --error=./slurm_files/slurm-%x-%j.err      # where to write slurm error
+#SBATCH --error=./slurm_files/slurm-%x-%j.err      # where to write slurm error
 
-#module load anaconda3
-#source activate dnlp # Or whatever you called your environment.
-#pip install --user spacy
-pip install --user git+https://github.com/lucadiliello/bleurt-pytorch.git
-pip install --user datasets benepar apted levenshtein
-
-
+module purge
+module load conda
+conda init
+source ~/.bashrc
+conda activate /user/amin.nematbakhsh/u11445/miniconda/envs/dnlp # Or whatever you called your environment.
+#source ../venv/bin/activate
 
 # Printing out some info.
 echo "Submitting job with sbatch from directory: ${SLURM_SUBMIT_DIR}"
@@ -37,6 +36,9 @@ echo "Latest Commit: $(git rev-parse --short HEAD)"
 echo -e "Uncommitted Changes: $(git status --porcelain | wc -l)\n"
 
 # Run the script:
-#python -u bart_generation.py --use_gpu --local_files_only --option finetune --task sst --hidden_dropout_prob 0.1
-#srun python -u multitask_classifier_task.py --use_gpu --local_files_only --option finetune --additional_input --task multitask
-srun python -u bart_generation.py --use_gpu --use_RL
+python -u multitask_classifier.py --option finetune --task etpc --hidden_dropout_prob=0.1 \
+                                  --epochs=20 --batch_size=32 \
+                                  --etpc_train='data/etpc/etpc-paraphrase-train.csv' --etpc_dev='data/etpc/etpc-paraphrase-dev.csv' \
+                                  --use_gpu \
+                                  --lr=0.00005
+                                # --local_files_only \

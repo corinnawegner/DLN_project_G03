@@ -1,5 +1,4 @@
 import math
-
 import spacy
 import torch
 import torch.nn as nn
@@ -7,7 +6,7 @@ import torch.nn.functional as F
 
 from base_bert import BertPreTrainedModel
 from tokenizer import BertTokenizer
-from utils import Tensor, get_extended_attention_mask
+from utils import get_extended_attention_mask
 
 
 class BertSelfAttention(nn.Module):
@@ -146,7 +145,6 @@ class BertModel(BertPreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
         self.config = config
-
         # Initialize the BERT tokenizer
         self.tokenizer = BertTokenizer.from_pretrained("bert-base-uncased", local_files_only=True)
 
@@ -163,8 +161,7 @@ class BertModel(BertPreTrainedModel):
         self.ner_tag_vocab = {tag: index + 1 for index, tag in enumerate(ner_tags_spacy)}
 
         self.input_cache = {}
-
-        # embeddings
+        # embedding
         self.word_embedding = nn.Embedding(
             config.vocab_size, config.hidden_size, padding_idx=config.pad_token_id
         )
@@ -172,7 +169,6 @@ class BertModel(BertPreTrainedModel):
         self.tk_type_embedding = nn.Embedding(config.type_vocab_size, config.hidden_size)
         self.pos_tag_embedding = nn.Embedding(len(pos_tags_spacy) + 1, config.hidden_size)
         self.ner_tag_embedding = nn.Embedding(len(ner_tags_spacy) + 1, config.hidden_size)
-
         self.embed_layer_norm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
         self.embed_dropout = nn.Dropout(config.hidden_dropout_prob)
         # position_ids (1, len position emb) is a constant, register to buffer
@@ -206,8 +202,6 @@ class BertModel(BertPreTrainedModel):
         tk_type_embeds = self.tk_type_embedding(tk_type_ids)
 
         if additional_input:
-            # Get POS tags and NER tags from self.pos_tag_embedding and self.ner_tag_embedding into pos_tag_embeds and ner_tag_embeds.
-
             all_pos_tags = []
             all_ner_tags = []
             for sequence_id in input_ids:
@@ -215,28 +209,19 @@ class BertModel(BertPreTrainedModel):
                 if sequence_id_tup in self.input_cache:
                     pos_tags, ner_tags = self.input_cache[sequence_id_tup]
                 else:
-                    # Convert input_ids to tokens using the BERT tokenizer
                     tokens = self.tokenizer.convert_ids_to_tokens(sequence_id.tolist())
-
-                    # Convert tokens to strings and remove special tokens
-                    token_strings = [
-                        token for token in tokens if token not in ["[PAD]", "[CLS]", "[SEP]"]
-                    ]
+                    token_strings = [token for token in tokens if token not in ["[PAD]", "[CLS]", "[SEP]"]]
                     input_string = self.tokenizer.convert_tokens_to_string(token_strings)
-                    # Process the input string with spaCy
                     tokenized = self.nlp(input_string)
                     pos_tags = [0] * len(tokens)
                     ner_tags = [0] * len(tokens)
                     counter = -1
-                    # Loop through the tokens and add the POS and NER tags
                     for i in range(len(token_strings)):
-                        # Add same POS and NER tag to all subwords of a word
                         if not token_strings[i].startswith("##"):
                             counter += 1
                         pos_tags[i + 1] = self.pos_tag_vocab.get(tokenized[counter].tag_, 0)
                         ner_tags[i + 1] = self.ner_tag_vocab.get(tokenized[counter].ent_type_, 0)
 
-                    # Cache the input
                     self.input_cache[sequence_id_tup] = (pos_tags, ner_tags)
 
                 all_pos_tags.append(pos_tags)
@@ -251,12 +236,10 @@ class BertModel(BertPreTrainedModel):
         pos_tag_embeds = self.pos_tag_embedding(pos_tags_ids)
         ner_tag_embeds = self.ner_tag_embedding(ner_tags_ids)
 
-        # Add five embeddings together; then apply embed_layer_norm and dropout and return.
-        return self.embed_dropout(
-            self.embed_layer_norm(
-                inputs_embeds + pos_embeds + tk_type_embeds + pos_tag_embeds + ner_tag_embeds
-            )
-        )
+        embeddings = inputs_embeds + pos_embeds + tk_type_embeds + pos_tag_embeds + ner_tag_embeds
+        embeddings = self.embed_layer_norm(embeddings)
+        embeddings = self.embed_dropout(embeddings)
+        return embeddings
 
     def encode(self, hidden_states, attention_mask):
         """
@@ -277,13 +260,13 @@ class BertModel(BertPreTrainedModel):
 
         return hidden_states
 
-    def forward(self, input_ids, attention_mask, additional_input=False):
+    def forward(self, input_ids, attention_mask,additional_input=False):
         """
         input_ids: [batch_size, seq_len], seq_len is the max length of the batch
         attention_mask: same size as input_ids, 1 represents non-padding tokens, 0 represents padding tokens
         """
         # get the embedding for each input token
-        embedding_output = self.embed(input_ids=input_ids, additional_input=additional_input)
+        embedding_output = self.embed(input_ids=input_ids,additional_input=additional_input)
 
         # feed to a transformer (a stack of BertLayers)
         sequence_output = self.encode(embedding_output, attention_mask=attention_mask)

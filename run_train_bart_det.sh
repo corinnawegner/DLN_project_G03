@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=train-bart-detection
-#SBATCH -t 1:00:00                  # estimated time # TODO: adapt to your needs
+#SBATCH -t 5:00:00                  # estimated time # TODO: adapt to your needs
 #SBATCH -p grete                     # the partition you are training on (i.e., which nodes), for nodes see sinfo -p grete:shared --format=%N,%G
 #SBATCH -G A100:1                    # take 1 GPU, see https://docs.hpc.gwdg.de/compute_partitions/gpu_partitions/index.html for more options
 #SBATCH --mem-per-gpu=8G             # setting the right constraints for the splitted gpu partitions
@@ -17,6 +17,9 @@ module load conda
 conda init
 source ~/.bashrc
 conda activate /user/amin.nematbakhsh/u11445/miniconda/envs/dnlp # Or whatever you called your environment.
+# source activate dnlp
+# source ../venv/bin/activate
+
 
 # Printing out some info.
 echo "Submitting job with sbatch from directory: ${SLURM_SUBMIT_DIR}"
@@ -35,4 +38,6 @@ echo "Latest Commit: $(git rev-parse --short HEAD)"
 echo -e "Uncommitted Changes: $(git status --porcelain | wc -l)\n"
 
 # Run the script:
-python -u bart_detection.py --use-gpu --train-batch-size=32 --local-files-only --val-batch-size=32 --test-batch-size=1 --epochs=5
+python -u bart_detection.py --train-batch-size=32  --val-batch-size=32 --test-batch-size=1 --epochs=20 \
+                            --learning-rate=0.00005 \
+                            --use-gpu # --local-files-only
