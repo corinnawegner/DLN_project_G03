@@ -105,6 +105,19 @@ run_train_minBERT.sh
 pip install nltk==3.9b1
 `
 
+To execute the code for BART paraphrase type detection task, run the following file.
+```shell
+run_train_bart_det.sh`
+```
+In addition to the arguments above, it also accepts the following arguments:
+
+| Parameter           | Description                       |
+|---------------------|-----------------------------------|
+| `--train-batch-size`| The batch size for training phase. |
+| `--val-batch-size`  | The batch size for validation phase.|
+| `--test-batch-size` | The batch size for testing phase.  |
+| `--learning-rate`   | The learning rate for the optimizer.|
+
 # Methodology
 
 In this section explain what and how you did your project. 
@@ -187,8 +200,6 @@ $$
 \nabla_{\theta} \mathcal{L}_{\text{RL}}(\theta) = \sum_{t=1}^{T} \left[ \nabla_{\theta} \log p_{\theta}(\hat{y}_t \mid \hat{Y}_{1:t-1}, X) \right] r_t
 $$
 
-
-
 In the paper, the authors define a positive reward only at the end of the sentence (i.e. $r_t = r_T$), assigning to the other positions a reward of zero. Thereby, it is possible to apply stochastic gradient descent.
 
 <p align="center">
@@ -231,8 +242,8 @@ Linear transformation preserves the absolute distance of the data and will be af
 
 [Jiang et al., 2020](https://arxiv.org/abs/1911.03437) introduce two methods to avoid the overfitting problem. The first is smoothness-inducing regularization. It makes model changes smoother by adding regularization terms. This gives constraints to the model parameters changing to ensure the output will not drastically change between different inputs. The second is Bregman proximal point optimization. It uses the Bregman distance to define a trust region that limits the magnitude of updating. It ensures stable convergence during the optimization process and avoids overfitting.
 
-### Learning rate Scheduler
-*used in BART detection, BART generation & minBERT**
+### Learning rate scheduler
+*used in BART detection, BART generation & minBERT*
 
 A learning rate scheduler is a strategy used to adjust the learning rate during training to improve model convergence and performance. It dynamically changes the learning rate according to a pre-defined schedule or rule, helping the model escape local minima and converge more smoothly. Commonly used learning rate schedulers are ReduceLROnPlateau get_linear_schedule_with_warmup and StepLR.
 
@@ -261,7 +272,14 @@ For each experiment answer briefly the questions:
 
 ## Experiments on Paraphrase Type Generation
 
-To evaluate paraphrase generation with BART, the metric used is the penalized BLEU score. It is the product of the [BLEU](https://aclanthology.org/P02-1040.pdf) score between the predicted paraphrases and the references, and 100 - the BLEU score between predicted paraphrases and inputs. This is scaled by a factor 1/52. The idea is to penalize copying the input sentence. The performance is evaluated on a validation set (20% of the training dataset), as there are no reference sentences provided in the test set.
+To evaluate paraphrase generation with BART, the metric used is the penalized BLEU score. The idea is to penalize copying the input sentence. It is given by:
+
+$$
+Penalized BLEU = \frac{BLEU(ref, pred)(1-BLEU(input, pred))}{52}
+$$
+
+
+The model's performance is evaluated on a validation set (20% of the training dataset), as there are no reference sentences provided in the test set.
 
 ### Standard training enhancements & hyperparameter tuning
 
@@ -269,30 +287,29 @@ After implementing the baseline, we started by applying some standard training m
 
 We particularly chose L2 regularization, because it evenly lowers the weights, as opposed to L1 regularization. We believe that over the sequences, all positions could be potentially important.
 
-We also included a different dropout rate in our hyperparameter tuning, but figured that the rate implemented by default performs best already (view hyperparameter tuning section for details). The obtained results (PBLEU: 23.7, BLEU Score: 20.8, Negative BLEU Score with input: 59.1) suggests that the model is not yet able to learn representations close to the references.
+We also included a different dropout rate in our hyperparameter tuning, but figured that the rate implemented by default performs best already (view hyperparameter tuning section for details). The obtained results (PBLEU: 23.7, BLEU Score: 20.8, Negative BLEU Score with input: 59.1) suggests that the model is not yet able to learn representations close to the references. 
 
-With the implementation of more features and methods, out of memory issues occured frequently. Batch sizes above 32 were not possible to use, although the batch size of 64 had proven to be better during the baseline hyperparameter search. Therefore, we implemented gradient accumulation to simulate a higher batch size.
+With the implementation of more features and methods, out of memory issues occured frequently. Batch sizes above 32 were after some point not possible to use, although the batch size of 64 had proven to be better during the baseline hyperparameter search. Therefore, we implemented gradient accumulation to simulate a higher batch size.
 
 ### POS & NER tagging
 
 We used the spacy library to obtain linguistic tags for the sequence tokens in the input. The scores obtained are: 
 
-Penalized BLEU Score: 23.8
-BLEU Score: 31.1
-Negative BLEU Score with input: 39.7
+|Penalized BLEU | BLEU |Negative BLEU with input |
+|---|---|---|
+|23.8|31.3|39.7|
 
-Looking at the result, although the penalized BLEU score has only marginally improved, we have at the same time reached a significantly inproved alignment of the predictions to the references. Therefore, we keep the tagging for all future experiments.
+Looking at the result, although the penalized BLEU score has only marginally improved, we have at the same time reached a significantly (by ~10) improved alignment of the predictions to the references. This results suggest that this method supports the model in generating more variety in the sentence structure, as it was  Therefore, we keep the tagging for all future experiments.
 
-Note that this comes at the cost of a decreased negative BLEU, suggesting an increased copying of input sentences. An argument for this is that the model must learn to remove the tags from the input in addition to all other input features like paraphrase types. 
-<span style="color:red">!!!Discuss!!!</span>.
+Note that this comes at the cost of a decreased negative BLEU, suggesting an increased copying of input sentences. A reason for this might be that the model must learn to remove the tags from the input in addition to all other input features like paraphrase types, which potentially binds resources of the model. 
 
 ### Adam vs. EAdam
 
-The direct comparison of Adam and EAdam suggests that EAdam converges significantly slower than Adam. This contradicts the statements of the authors of ["EAdam Optimizer: How  Impact Adam"](https://www.arxiv.org/pdf/2011.02150). <span style="color:red">!!!Unfinished!!!</span>.
+A direct comparison between Adam and EAdam reveals that EAdam converges significantly slower than Adam, which contradicts the claims made by the authors of ["EAdam Optimizer: How &epsilon; Impact Adam"](https://www.arxiv.org/pdf/2011.02150). We were unable to find a theoretical explanation for this outcome. However, this observation underscores the strengths of Adam and provides additional evidence as to why it remains the dominant optimizer in deep learning.
 
 ![Description](https://github.com/corinnawegner/DLN_project_G03/blob/main/figures/adam_vs_eadam.png)
 
-A relevant side observation in the comparison of the two optimizers is the score at the beginning of the training. We investigated the surprisingly high score for the un-finetuned model by looking at the input - prediction pairs. The reason is that the model without finetuning produces copies of the input ID's. Besides the input sentence, these include also the paraphrase types. Thus, the negative BLEU score is already relatively high (due to "uncommon n-grams" - the negative BLEU compares the reproduced sentences with the original sentences from the dataset, not the detokenized input). The model quickly learns to leave out every non-sentence token from the input, resulting in a true copy of the input sentence. At this point the negative BLEU score is tiny and so drops the penalized BLEU. This is where the actual learning of the model begins. 
+As this experiment might be relevant side observation from this experiment is the score at the beginning of the training. We investigated the surprisingly high score for the non-finetuned model by looking at the input - prediction pairs. The reason is that the model without finetuning produces copies of the input ID's. Besides the input sentence, these include also the paraphrase types. Thus, the negative BLEU score is already relatively high (due to "uncommon n-grams" - the negative BLEU compares the reproduced sentences with the original sentences from the dataset, not the detokenized input). The model quickly learns to leave out every non-sentence token from the input, resulting in a true copy of the input sentence. At this point the negative BLEU score is tiny and so drops the penalized BLEU. This is where the actual learning of the model begins.
 
 ### Loss function engineering
 
@@ -436,14 +453,48 @@ We tried to increase the quality of our paraphrases even more by using a differe
     
 The text generation model was first regularly fine-tuned. After this process, we trained it in the RL scenario, where it acts as an agent. The generator model creates a paraphrase to the input sentence, and the MultiTaskBERT is deciding on the quality. The output value, initially ranging from 0 to 5, is scaled to a probability. Then, the weights of the generator are updated according to the gradient described in Methodology.
 
-In the standard training, in the last epochs the learning rate had decreased to around 1e-9. So we decided for the RL training to pick a learning rate of 1e-8, which acknowledges that the model is close to an optimum, but gives the model a chance to step a bit closer into the right direction
+In the standard training, in the last epochs the learning rate had decreased to around 1e-9. So we decided for the RL training to test learning rates of 1e-9 and 1e-8, which acknowledges that the model is close to an optimum, but gives the model a chance to step a bit closer into the right direction.
+
+We report for both learning rates an improved score. For a learning rate of 1e-9, the improvement was however marginal:
+
+    LR: 1e-9
+    BLEU Score: 28.4
+    Negative BLEU Score with input: 45.0
+    Penalized BLEU Score: 24.6
+
+For the higher learning rate we could achieve a higher improvement 
+
+    LR: 1e-8
+    BLEU Score: 27.3
+    Negative BLEU Score with input: 47.4
+    Penalized BLEU Score: 24.9
+    
+However, the advantage disappears if we select a higher learning rate. Specifically, we tested this method with a learning rate of 1e-6 and obtained a Penalized BLEU score of ~0.0, and a Negative BLEU of virtually 100. This means, the input is fully copied. We explain this observation with the MultiTaskBERT trained on STS. The reward signal it provides is basically a measure of semantic similarity. This is a relevant quality of a paraphrase, however it does not automatically make a good paraphrase. The reward signal only pays attention to this feature, thereby encouraging the model to copy the input sentence. 
+
+To summarize, this method has been proven to be beneficial. However, it must be used with strong care.
     
 ## Experiments on minBERT
 ### Additional Pretraining
 *used in sst, sts, qqp task*
 
-Additional pretraining refers to taking a model that has already initially pretrained and further training it on a domain-specific dataset using tasks such as Masked Language Modeling(MLM) or Next Sentence Predition(NSP). This will help the model to enhance the understanding and performance within that specific domain.     
+Additional pretraining refers to taking a model that has already initially pretrained and further training it on a domain-specific dataset using tasks such as Masked Language Modeling(MLM) or Next Sentence Predition(NSP). This will help the model to enhance the understanding and performance within that specific domain.
 
+According to research by [Peng Su et al.](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC8978438/), a BERT model pretrained on a biomedical corpus can more accurately extract features in smaller domains, such as genes and proteins.Considering the distinct characteristics of the datasets in each sub-task, the best pretraining approach is to select a corresponding corpus based on the specifics of each dataset and perform MLM (Masked Language Modeling) or NSP (Next Sentence Prediction) pretraining. However, in the minBERT task, the QQP and STS tasks cover a wide range of topics without a clear theme.Thus, we decided to use highly related corpora for the SST task: the ["Trending YouTube Video Statistics and Comment"](https://www.kaggle.com/datasets/datasnaek/youtube/data) dataset from Kaggle  as an additional set of pretraining material. Since this type of sentiment can be less contextual, we performed MLM in the process of pretreatment.
+
+Unfortunately, this pretrained model did not improve performance on any task. Possible explanations include: 1) The corpus size was too small—pretraining on a larger corpus is typically necessary to help the model learn sufficient language features. 2) The lack of improvement on QQP and STS tasks is reasonable, as the pretrained corpus was more closely related to SST. 3)The contents of the corpus themselves were not sufficiently representative. YouTube comments are often short and consist of many abbreviations and nonstandard language, which could also have caused ineffective model learning.
+
+This method was therefore abandoned and not combined with other methods. Potential improvements could include finding a larger and more suitable corpus or preprocessing the corpus to remove unnecessary comments that do not contribute to training, which could enhance the model's training effectiveness
+
+### Additional Input (POS Tags and NER Tags)
+
+*used in sst,sts,qqp task*
+
+We used SpaCy to add POS tags and NER tags to the text, allowing the model to obtain more semantically relevant information. As expected, the SST task was largely unaffected since NER and POS tags do not significantly contribute to sentiment analysis. However, we observed improvements in the STS and QQP tasks.
+
+### Additional Layers
+For different tasks, we tested adding various layers, and the layers that yielded the best results were as follows:
+* SST Task: We added a linear transformation layer and a ReLU activation layer. Reducing dimensionality before the final classification step allows for further feature extraction and aggregation. Additionally, the ReLU activation function introduces non-linearity, helping the model capture more complex patterns and relationships.
+* QQP Task: We added a BiAttention layer to capture the interdependence between two sentences. By calculating the attention weights between the two sentences, the model can better determine whether the sentences are semantically similar and constitute paraphrases.
 ### Z-Score Normalization
 *used in sts task*
 
@@ -461,7 +512,12 @@ For smoothing, we calculate the sum of squares of all the parameters of the mode
 
 ### Multitask Fine-tuning
 *train sst,sts and qqp together*
-unfortunately, we just realize the bonus task to get a baseline for multitask classifier. We have not implemented any improvements on it.
+We just realize the bonus task to get a baseline for multitask classifier. Unfortunately, We have not implemented any improvements on it. But from the results we could see that, the sts correlation raise and the other two become lower. This is because one model shares parameters may prefer certain tasks. Therefore, if we want to optimizer our model, we could put different weights on different tasks. Or we can "freeze" some basic layers and try certain layers in each task. 
+
+### Contrastive learning
+*supposed to use in sst,sts and qqp*
+
+In multitask_classifier_task.py, you may find some incomplete implements of supervised and unsupervised simcse. We tried to introduce these parts, but the results are not matched our expection. We tried to extract positive paris and negative pairs from our data by the labels in unsupervised simcse. But we may make some mistakes when we construct similarity matrix, which causes the accuracy break down to a very low value. And for the supervised simcse, we did not find a good way to annote our dataset.  
    
 
 ### 
@@ -488,16 +544,18 @@ Here is a the table for hyperparameter search, for Bart detection.
     
 | Learning Rate | Batch Size | Accuracy | Matthews Score |
 |---------------|------------|----------|----------------|
-| 1e-4          | 16         | 0.??     | 0.??           |
+| 1e-4          | 16         | 0.81     | 0.0           |
 | 1e-4          | 32         | 0.81     | 0.0            |
 | 5e-5          | 16         | 0.83     | 0.08           |
 | 5e-5          | 32         | 0.83     | 0.229          |
 | 1e-5          | 16         | 0.828    | 0.186          |
 | 1e-5          | 32         | 0.826    | 0.169          |
     
-We experimented with various learning rate schedulers, such as get_linear_schedule_with_warmup and StepLR, to optimize model performance. However, these schedulers did not lead to any improvements; in fact, they often resulted in worse outcomes. This suggests that a fixed learning rate might be more effective for our model. The best accuracy achieved with a fixed learning rate of 5e-5 was 0.836, accompanied by a Matthews correlation coefficient of 0.298 after 15 epochs.
+We experimented with the most popular learning rate schedulers, the get_linear_schedule_with_warmup from the Transformers library and StepLR from Pytorch, to optimize model performance. However, these schedulers did not lead to any improvements; in fact, they often resulted in worse outcomes. This suggests that a fixed learning rate might be more effective for our model. The best accuracy achieved with a fixed learning rate of 5e-5 was 0.836, accompanied by a Matthews correlation coefficient of 0.298 after 15 epochs.
 
 Breaking down the Matthews correlation coefficient by class, we obtained the following values: [0.377, 0.243, 0.186, 0.337, 0.602, 0.0, 0.339]. These results indicate that while the model performs reasonably well on most classes, it fails to learn effectively for paraphrase type class 6, as evidenced by a coefficient of 0.0.
+
+
 
 In comparison to minBert, we got the best accuracy of 0.257 and Matthews correlation coefficient of 0.09, which is a lot lower than the values for Bart model.
 This comparison could highlight some limitations of the minBERT model, given the complexity of the paraphrase detection task.
@@ -508,8 +566,8 @@ This comparison could highlight some limitations of the minBERT model, given the
 
 | **Stanford Sentiment Treebank (SST)** | **Metric 1** |**Metric n** |
 |----------------|-----------|------- |
-|Baseline |45.23%           |...            | 
-|Improvement 1          |58.56%            |...          
+|Baseline |50.90%           |...            | 
+|Additional Layer          |%            |...          
 |Improvement 2        |52.11%|...|
 |...        |...|...|
 
@@ -546,10 +604,10 @@ This comparison could highlight some limitations of the minBERT model, given the
 |Baseline |-          |45.2 | -
 |Standard training enhancements & hyperparameter tuning |23.6|20.8|59.1|
 |POS & NER tagging |23.8|31.1|39.7|
-|Loss function engineering     |**24.6**|28.2|45.2|
+|Loss function engineering     |24.6|28.2|45.2|
 |Quality Controlled Paraphrase Generation|19.3|36.8|27.3|
 |LoRA |20.4|34.8|30.5|
-|Deep Reinforcement Learning|||
+|Deep Reinforcement Learning|**24.9**|27.3|47.4|
     
 Discuss your results, observations, correlations, etc.
 
@@ -587,24 +645,32 @@ After deploying the improvements mentioned above and performing hyperparameter t
 -	BLEU Score: 20.842, Negative BLEU Score with input: 59.106
 -	Penalized BLEU Score: 23.690
 
-## Visualizations 
+<!--## Visualizations 
 Add relevant graphs of your experiments here. Those graphs should show relevant metrics (accuracy, validation loss, etc.) during the training. Compare the  different training processes of your improvements in those graphs. 
 
 For example, you could analyze different questions with those plots like: 
 - Does improvement A converge faster during training than improvement B? 
 - Does Improvement B converge slower but perform better in the end? 
-- etc...
+- etc... -->
+
+#### Paraphrase type detection
+
+For paraphrase type detection we do a hyperparameter search for both the batch size and the learning rate by computing the accuray and the Matthews correlation coefficient for each combination over 5 epochs.
+
+The values for each combination is given in the Experiment section for BART paraphase detection task. I have seen the effect of batch size and learning rate in convergence of deep learning models in other courses and exercises. Even though mathematically a larger batch size would have a better effect but I have seen situations that this is not necessarily the case.
+
+The batch size of 64 was not possible due to the memory restrictions on the clusters at GWDG, sometimes it worked, sometimes it didn't!
 
 ## Members Contribution 
 Explain what member did what in the project:
 
 **Corinna Wegner:** Paraphrase type generation, bonus task(7.2.2), README
 
-**Minyan Fu:** minBERT(mainly sts task), bonus task(7.2.2)
+**Minyan Fu:** minBERT(mainly sts task), bonus task(7.2.2), README
 
 **Yiyang Huang:** bonus task(7.2.2)
 
-**Amin Nematbakhsh:**
+**Amin Nematbakhsh:** Paraphrase type detection, bonus task (7.2.1) (baseline implementation)
 
 We should be able to understand each member's contribution within 5 minutes. 
 
