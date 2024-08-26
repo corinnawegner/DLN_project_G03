@@ -312,9 +312,9 @@ Note that this comes at the cost of a decreased negative BLEU, suggesting an inc
 
 We wanted to see how the model performs using the pretrained BART only, with additional POS/NER tagging as input. We found, at first glance, a surprisingly good score:
 
-    BLEU Score: 21.837215942755996 
-    Negative BLEU Score with input: 54.38936934225878
-    Penalized BLEU Score: 22.840623140715724
+    BLEU Score: 21.8
+    Negative BLEU Score with input: 54.4
+    Penalized BLEU Score: 22.8
 
 We investigated the surprisingly high score for the non-finetuned model by looking at the input - prediction pairs. The reason is that the model without finetuning produces copies of the input ID's. Besides the input sentence, these include also the paraphrase types. Thus, the negative BLEU score is already relatively high (due to "uncommon n-grams" - the negative BLEU compares the reproduced sentences with the original sentences from the dataset, not the detokenized input). The model quickly learns to leave out every non-sentence token from the input, resulting in a true copy of the input sentence. At this point the negative BLEU score is tiny and so drops the penalized BLEU. This is where the actual learning of the model begins.
 
