@@ -12,11 +12,13 @@
 #SBATCH --output=./slurm_files/slurm-%x-%j.out     # where to write output, %x give job name, %j names job id
 #aSBATCH --error=./slurm_files/slurm-%x-%j.err      # where to write slurm error
 
+conda activate dnlp
+
 pip install --user spacy
+python -m spacy download en_core_web_sm
 pip install --user git+https://github.com/lucadiliello/bleurt-pytorch.git
 pip install --user datasets benepar apted levenshtein
 pip install --user peft
-
 
 # Printing out some info.
 echo "Submitting job with sbatch from directory: ${SLURM_SUBMIT_DIR}"
@@ -37,6 +39,6 @@ echo -e "Uncommitted Changes: $(git status --porcelain | wc -l)\n"
 
 # Run the script:
 #python -u bart_generation.py --use_gpu --local_files_only --option finetune --task sst --hidden_dropout_prob 0.1
-#srun python -u multitask_classifier_task.py --use_gpu --local_files_only --option finetune --additional_input --task multitask
-srun python -u bart_generation.py --use_gpu --normal_mode
+run python -u multitask_classifier_task.py --use_gpu --local_files_only --option finetune --additional_input --task sts
+srun python -u bart_generation.py --use_gpu --use_RL
 #srun python -u bart_detection.py

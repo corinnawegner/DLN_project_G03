@@ -611,7 +611,7 @@ def finetune_paraphrase_generation(args):
                 device,
                 tokenizer,
                 train_dataset=train_dataset,
-                learning_rate=1e-9
+                learning_rate=1e-8
         )
 
         "model, evaluator_path, train_data, device, tokenizer, train_dataset, learning_rate, num_epochs=10 if not DEV_MODE else 2"
