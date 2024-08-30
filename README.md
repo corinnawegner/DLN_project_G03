@@ -692,7 +692,7 @@ Explain what member did what in the project:
 
 **Amin Nematbakhsh:** Paraphrase type detection, bonus task (7.2.1) (baseline implementation)
 
-We should be able to understand each member's contribution within 5 minutes. 
+<!-- We should be able to understand each member's contribution within 5 minutes. -->
 
 # AI-Usage Card
 Artificial Intelligence (AI) aided the development of this project. For detailed information see our [AI Usage Card](https://www.overleaf.com/read/nqxwhfmkpnnv#73470b) based on [ai-cards.org](https://ai-cards.org/).
