@@ -682,7 +682,7 @@ The values for each combination is given in the Experiment section for BART para
 The batch size of 64 was not possible due to the memory restrictions on the clusters at GWDG, sometimes it worked, sometimes it didn't!
 
 ## Members Contribution 
-Explain what member did what in the project:
+<!-- Explain what member did what in the project: -->
 
 **Corinna Wegner:** Paraphrase type generation, bonus task(7.2.2), README
 
